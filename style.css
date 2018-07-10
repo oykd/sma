@@ -1,0 +1,44 @@
+/*
+	Space marine adventures style.css 
+		© 2018 onyokneesdog
+	
+	last edit: 08.07.2018
+*/
+
+body {
+	background-color: #000000;
+}
+
+@font-face {
+	font-family: '8bit';
+	src: url('8bit.ttf');
+}
+
+#deep-space {
+	position: absolute !important;
+	z-index: 0;
+}
+
+#hero {
+	position: absolute !important;
+	z-index: 2;
+}
+
+.entity {
+	position: absolute !important;
+	z-index: 1;
+}
+
+.cell {
+
+}
+
+#debug {
+	position: absolute !important;
+	font-family: '8bit';
+	font-size: 12px;
+	z-index: 3;
+	color: #ffffff;
+	left: 20px;
+	top: 100px;
+}
