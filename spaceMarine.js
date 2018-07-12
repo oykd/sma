@@ -51,7 +51,7 @@ class Rect {
 
 // ENUM for buttons
 var btn = Object.freeze({"left": 0, "right": 1, "down": 2, "up": 3, "jump": 4, "atack": 5});
-var act = Object.freeze({"stop": 0, "run": 1, "crawling": 2, "jump": 3 });
+var act = Object.freeze({"stop": 0, "run": 1, "crawling": 2, "jump": 3, "slipping": 4, "climbing": 5, "dash": 6 });
 var n = 0;
 
 class Hero {
@@ -67,6 +67,7 @@ class Hero {
 		this.direction = 1;
 		this.jumpTimer = 0;
 		this.prevSprite = -1;
+		this.inertia = 0;
 		
 		/* Hero pictures */
 		this.pics = new Array(
@@ -85,74 +86,166 @@ class Hero {
 		);
 	}
 	
-	movement(map) {
-		/* Delta X */
-		var dx = ((this.controls[btn.down]) ? map.Ph.crawlingSpeed : map.Ph.runSpeed) * (1 * this.controls[btn.right] - 1 * this.controls[btn.left]);
+	movement(map) {		
+		/* Save direction */
 		if (this.controls[btn.left]) this.direction = -1;
 		if (this.controls[btn.right]) this.direction = 1;
-		/* Current action*/
-		this.action = (dx) ? act.run : act.stop;
-		if (this.controls[btn.down]) this.action = act.crawling;
-		/* Horizontal positioning */
-		var hm = true;			
+		
+		/* Lead-up */
+		var dx = map.Ph.run; // possible horizontal move
+		dx = dx * (this.controls[btn.right] - this.controls[btn.left]);
+		var inAir = false;
+		var m = Math.floor((this.R.x - map.P.x + this.R.w / 2) / map.cellWidth); // horizontal index for middle of hero body
+		var mx = (this.R.x - map.P.x + this.R.w / 2) - m * map.cellWidth; // distinction beetween left index and middle px
+		var left = Math.floor((this.R.x - map.P.x + 3) / map.cellWidth); // horizontal index for left side of hero
+		var right = Math.floor((this.R.x - map.P.x + this.R.w - 3) / map.cellWidth); // horizontal index for right side of hero
+		var head = Math.floor((this.R.y - map.P.y) / map.cellHeight); // vertical index for the head of hero
+		var legs = Math.floor((this.R.y - map.P.y + this.R.h - 1) / map.cellHeight); //vertical index for the legs of hero
+		var legsPx = this.R.y + this.R.h; // bottom of hero in pixels
+		
+		var slFix = Math.floor((this.R.y - map.P.y + this.R.h + map.Ph.slipping) / map.cellHeight); 
+				// * Specially for slipping 
+				// (using legs is not correct between the blocks)
+		
+		/* Get floor */
+		var floorName = 'air'; 
+		var floor = map.pass.length; // floor vertical index
+		for (var	i = legs; i < map.pass.length; i++)
+			if (map.pass[i][m] == 1) {	
+				floor = i; 
+				floorName = 'flat'; 
+				break; 
+			} else if (map.pass[i][m] == 2) { 
+				floor = i + mx / map.cellHeight; 
+				floorName = 'downhill'; 
+				break; 
+			} else if (map.pass[i][m] == 3) { 
+				floor = i + (1 - mx / map.cellHeight); 
+				floorName = 'uphill'; 
+				break; 
+			}
+		var floorPx = floor * map.cellHeight; // floor in pixels (Y)
+		
+		/* Get ceil */
+		var ceil = -1; // ceil vertical index
+		for (var	i = head; i >= 0; i--)
+			if (map.pass[i][m]) { 
+				ceil = i; 
+				break; 
+			}
+		var ceilPx = (ceil + 1) * map.cellHeight; // ceil in pixels (Y)	
+		
+		/* debug */
+		map.debugIns('Hero: ' + this.R.x + ':' + this.R.y + ' | Map: ' + map.P.x + ':' + map.P.y, 0);
+		map.debugIns('Floor: ' + floorName + ' / ' + floorPx + ' | Ceil: ' + ceilPx, 1);
+		
+		/* Slipping */
+		if ((map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3) && !(this.controls[btn.left] + this.controls[btn.right])) {
+			if (map.pass[slFix][m] == 2) dx = map.Ph.slipping;
+			if (map.pass[slFix][m] == 3) dx = -1 * map.Ph.slipping;
+			// specially for this situation: ><
+			let z = map.pass[slFix][Math.floor((this.R.x - map.P.x + this.R.w / 2 + dx) / map.cellWidth)];
+			if ((z == 2 || z == 3) && z != map.pass[slFix][m]) dx = 0; 
+			// inertia fixing some bugs between the blocks
+			this.inertia = dx;
+		}
+		
+		/* on the ground */
+		if (legsPx == floorPx) {
+			map.debugIns(' >> ground >>', 2); //debug
+		/* in Air */
+		} else if (legsPx < floorPx) {
+			inAir = true;
+			map.debugIns(' >> air >>', 2); //debug
+			// JUMP
+			if (this.jumpTimer > 0)	{
+				this.jumpTimer--;
+				if (this.R.y + map.Ph.jumpPower < ceilPx) {
+					this.R.y = ceilPx;
+					this.jumpTimer = 0;
+				} else 
+					this.R.y += map.Ph.jumpPower;
+			// FALLING (or slipping)
+			} else {
+				this.R.y += map.Ph.gravity;
+				if (this.R.y + this.R.h > floorPx) this.R.y = floorPx - this.R.h; // FIX to the ground
+			}
+		}
+		
+		/* Jump start */
+		if (this.R.y + map.Ph.jumpPower - 3 > ceilPx && this.controls[btn.up]) {
+			if (legsPx == floorPx) {
+				this.R.y -= 3;
+				this.jumpTimer = map.Ph.jumpLength;
+			}
+			else if ((map.pass[legs][m] == 2 || map.pass[legs][m] == 3) && legsPx >= floorPx - map.Ph.run) {
+				this.R.y -= 3;
+				this.jumpTimer = map.Ph.jumpLength;
+			}
+		}
+		
+		/* Inertia */
+		// * using only for slipping in this version
+		if (dx == 0) {
+			dx = this.inertia;
+			this.inertia = 0;
+		}
+		
+		/* Crawling */
+		if (!inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3))
+			dx = map.Ph.crawling * (this.controls[btn.right] - this.controls[btn.left]);
+		
+		/* Check horizontal barriers*/
+		if ((map.pass[head][left] || map.pass[legs][left] == 1 || left < 0) && dx < 0) dx = 0;
+		if ((map.pass[head][right] || map.pass[legs][right] == 1 || right > map.pass[0].length - 1) && dx > 0) dx = 0;	
+		
+		/* Climbing */
+		// * it's must be after checking h-barriers
+		if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left]) {
+			dx = -1 * map.Ph.climbing;
+			this.R.y -= map.Ph.climbing;
+		}
+		if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right]) {
+			dx = map.Ph.climbing;
+			this.R.y -= map.Ph.climbing;
+		}
+		
+		/* Final accept DX to Hero or Map position */
 		if (dx > 0 && this.R.x + dx < map.heroView || dx < 0 && this.R.x + dx > map.heroView) {
 			this.R.x += dx;
 		} else if (map.P.x - dx <= 0 && map.P.x - dx >= (map.width - screenWidth) * -1 && !map.screenFrozen) {
 			map.P.x -= dx;
 			document.getElementById("deep-space").style.left = map.P.x + 'px';
 			map.drawEntity();
-			hm = false;
 		} else {
 			this.R.x += dx;
-			hm = true; 
 		}
-		/* Horizontal barriers */
-			// потом следует переделать. нужно проверять два блока (а не один) по высоте, если герой находится в полете	
-			// здесь в очень редких случаях герой может залезть внутрь блока
-		var i = Math.round((this.R.x - map.P.x + dx * 2) / 32);
-		var j = Math.floor((this.R.y - map.P.y + this.R.h - 1) / 32);
-		if (i < 0 || i > map.pass[0].length - 1 || map.pass[j][i]) {
-			if (hm) this.R.x -= dx; else map.P.x += dx;
-			if (this.action != act.crawling) this.action = act.stop;
-			dx = 0;
-		}		
-		/* Falling */
-		var dy = 0;
-		var m = Math.floor((this.R.x - map.P.x + this.R.w / 2) / 32);
-		var t = Math.floor((this.R.y - map.P.y) / 32);
-		// get bottom element
-		var b = map.pass.length;
-		for (var	i = t; i < map.pass.length; i++)
-			if (map.pass[i][m]) {
-				b = i;
-				break;
-			}
-		/* Hero in Air */
-		if (this.R.y + this.R.h < b * 32) {
-			this.action	= act.jump; 
-			this.controls[btn.up] = 0;
-			dy = map.Ph.gravity;
-			if (this.jumpTimer > 0)
-			{
-				dy = map.Ph.jumpPower;
-				this.jumpTimer--;
-			}
-			this.R.y += dy;
-			if (this.R.y + this.R.h >= b * 32) this.R.y = b * 32 - this.R.h;
-		/* Jump */
-		} else if (this.controls[btn.up]){
-			this.R.y -= 3;
-			this.jumpTimer = map.Ph.jumpLength;
-		} else {
-			this.jumpTimer = 0;
-		}			
-		/* Drawing */
+		
+		/* Critical check*/
+		if (this.R.y + this.R.h > floorPx) this.R.y = floorPx - this.R.h; // FIX to the ground
+		
+		/* Set action */
+		if (inAir && (this.controls[btn.left] + this.controls[btn.right]) && (map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.climbing;
+		else if (inAir && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)) this.action = act.slipping;		
+		else if (this.R.y + this.R.h < floorPx - 10) this.action = act.jump;
+		else if (this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.crawling;
+		else if (dx != 0) this.action = act.run;
+		else this.action = act.stop;
+		
+		/* Draw sprite */
 		n = (dx) ? 1 - n : 0;
 		switch (this.action) {
-			case act.stop: this.draw((this.direction > 0) ? 11 : 5); break; 
-			case act.crawling: this.draw((this.direction > 0) ? 6 + n : 0 + n); break; 
-			case act.run: this.draw((this.direction > 0) ? 9 + n : 3 + n); break; 
-			case act.jump: this.draw((this.direction > 0) ? 8 : 2); break; 
+			case act.stop: 
+				this.draw((this.direction > 0) ? 11 : 5); break; 
+			case act.crawling: 
+				this.draw((this.direction > 0) ? 6 + n : 0 + n); break; 
+			case act.run:  
+			case act.climbing:
+				this.draw((this.direction > 0) ? 9 + n : 3 + n); break; 
+			case act.slipping:
+				this.draw((this.direction > 0) ? 9 : 3); break; 
+			case act.jump: 
+				this.draw((this.direction > 0) ? 8 : 2); break; 
 		}
 	}
 	
@@ -200,22 +293,25 @@ class Entity {
 }
 
 class Physics {
-	constructor (g = 10, jP = -5, jL = 11, cS = 3, rS = 6, cC = 0.6) {
+	constructor (g = 10, jP = -5, jL = 11, c = 3, r = 6, cl = 3, sl = 2) {
 		this.gravity = g; 			// X px per timer-period in falling
 		this.jumpPower = jP;			// X px in lift
 		this.jumpLength = jL; 		// Jump period in timer-periods
 											// *Full height of jump = jumpPower * jumpTimer + 3. 
-		this.crawlingSpeed = cS;	// X px in crawling step
-		this.runSpeed = rS;			// X px in run step
-		this.climbCoef = cC;			// Slowing coeficient, while climbing 
+		this.crawling = c;			// X px in crawling step
+		this.run = r;					// X px in run step
+		this.climbing = cl;			// X px in climbing
+		this.slipping = sl;			// X px in slipping
 	}
 }
 
 class Map {
 	
-	constructor (planet = 'jupiter', background = 'space.jpg') {
+	constructor (planet = 'jupiter', background = 'space.jpg', debug = false) {
 		this.planet = planet;
 		this.bg = background;
+		this.dbg = debug;
+		
 		this.cellWidth = 32;
 		this.cellHeight = 32;
 		this.heroView = 250; 
@@ -248,7 +344,7 @@ class Map {
 		this.lookTranslation = 'DJJWBRFGAS';
 		this.entity = new Array();
 		
-		this.passability = 'H ^JWBRGAS';
+		this.passability = 'H D^JWBRGAS';
 		
 		/* Default Map structure */
 		// *H is for hero start point
@@ -265,11 +361,11 @@ class Map {
 			"                                                           R",
 			"                                                          ==",
 			"                                                          ##",
-			"                                                       =  ##",
+			" =                                                     =  ##",
 			"H                                                         ##",
-			"=======           =                                 =     ##",
-			"#######=          #        ==                 ==          ##",
-			"########=^^^=^^^=^#^^^===^^##^^^==^^^==^^^=^=^##^=^^^^^^^^##"
+			"==>   <>          =                                 =     ##",
+			"###> <##>         #        <=                 ==          ##",
+			"####=####^^^=^^^=^#^^^===^^##^^^==^^^==^^^=^=^##^=^^^^^^^^##"
 		);
 		
 		var newDebugStructure = new Array(
@@ -305,7 +401,32 @@ class Map {
 			document.write('<br>');
 		}
 		document.write('</div>');
-		document.write('<span id="debug">Click inside frame to activate keyboard</span>');
+		if (this.debug)
+			document.write('<span id="debug">Click inside frame to activate keyboard</span>');
+	}
+	
+	debug(s = '') {
+		if (!this.dbg) return; 
+		document.getElementById("debug").innerHTML = s;
+	}
+	
+	debugIns(s = '', x = -1) {
+		if (!this.dbg) return; 
+		if (x == -1) {
+			document.getElementById("debug").innerHTML += '<br>' + s;
+		} else {
+			var lines = document.getElementById("debug").innerHTML.split('<br>');
+			var len = (lines.length - 1 < x) ? x : lines.length - 1; 
+			document.getElementById("debug").innerHTML = '';
+			for (var i = 0; i <= len; i++) {
+				if (i == x)
+					document.getElementById("debug").innerHTML += s;
+				else if (i < lines.length) 
+					document.getElementById("debug").innerHTML += lines[i];
+				if (i != len) 
+					document.getElementById("debug").innerHTML += '<br>';
+			}
+		}
 	}
 	
 	load(hero, str = '') {
@@ -356,7 +477,7 @@ class Map {
 		}		
 		/* Physics */
 		//this.Ph = new Physics(); 
-		this.Ph = new Physics(10, -6, 12, 3, 6, 0.6);
+		this.Ph = new Physics(10, -6, 12, 3, 6, 3, 2);
 	}
 	
 	drawEntity() {
@@ -456,7 +577,7 @@ function KeyUp(e)
 var screenWidth = 640;
 
 var hero = new Hero('Jimmy');
-var map = new Map();
+var map = new Map('jupiter', 'space.jpg', true);
 map.load(hero, '');
 map.drawStructure();
 map.drawEntity();
@@ -473,13 +594,13 @@ function game() {
 	
 	/* Check Finish */
 	if (hero.R.isCrossWith(map.finish, map.P.x)) {
-		document.getElementById('debug').innerHTML = 'Finish!';
+		map.debug('Finish!');
 		return;
 	}
 	
 	/* Check fell into chasm */
 	if (hero.R.bottom >= map.height) {
-		document.getElementById('debug').innerHTML = 'Fell into chasm :(';
+		map.debug('Fell into chasm :(');
 		map.load(hero, '');
 		//return;
 	}
