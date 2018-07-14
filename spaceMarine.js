@@ -2,14 +2,21 @@
 	Space Marine Adventures v 1.2 Alpha
 		© 2018 onyokneesdog
 	
-	last edit: 10.07.2018
+	last edit: 14.07.2018
 	
 	>> >> >>
 	Contents:
 		00. HERO
 		01. MAP
-		02. KEYBOARD
-		03. START
+		02. TRIGGERS
+		03. KEYBOARD
+		04. START
+		
+	>> >> >>
+	Notes:
+		xx. legsPx in hero.movement should be calculated with map.P.y (later)
+		00. Add warpzone
+		01. Add fall of blocks
 */
 
 class Point {
@@ -49,10 +56,10 @@ class Rect {
 
 /* >> 00. HERO >> >> */
 
-// ENUM for buttons
+// ENUM buttons
 var btn = Object.freeze({"left": 0, "right": 1, "down": 2, "up": 3, "jump": 4, "atack": 5});
+// ENUM actions
 var act = Object.freeze({"stop": 0, "run": 1, "crawling": 2, "jump": 3, "slipping": 4, "climbing": 5, "dash": 6 });
-var n = 0;
 
 class Hero {
 
@@ -66,8 +73,11 @@ class Hero {
 		this.action = act.stop;
 		this.direction = 1;
 		this.jumpTimer = 0;
+		this.jumpPower = 0;
 		this.prevSprite = -1;
 		this.inertia = 0;
+		this.inAir = false;
+		this.n = 0;
 		
 		/* Hero pictures */
 		this.pics = new Array(
@@ -94,15 +104,14 @@ class Hero {
 		/* Lead-up */
 		var dx = map.Ph.run; // possible horizontal move
 		dx = dx * (this.controls[btn.right] - this.controls[btn.left]);
-		var inAir = false;
+		this.inAir = false;
 		var m = Math.floor((this.R.x - map.P.x + this.R.w / 2) / map.cellWidth); // horizontal index for middle of hero body
 		var mx = (this.R.x - map.P.x + this.R.w / 2) - m * map.cellWidth; // distinction beetween left index and middle px
 		var left = Math.floor((this.R.x - map.P.x + 3) / map.cellWidth); // horizontal index for left side of hero
 		var right = Math.floor((this.R.x - map.P.x + this.R.w - 3) / map.cellWidth); // horizontal index for right side of hero
 		var head = Math.floor((this.R.y - map.P.y) / map.cellHeight); // vertical index for the head of hero
 		var legs = Math.floor((this.R.y - map.P.y + this.R.h - 1) / map.cellHeight); //vertical index for the legs of hero
-		var legsPx = this.R.y + this.R.h; // bottom of hero in pixels
-		
+		var legsPx = this.R.y + this.R.h; // bottom of hero in pixels		
 		var slFix = Math.floor((this.R.y - map.P.y + this.R.h + map.Ph.slipping) / map.cellHeight); 
 				// * Specially for slipping 
 				// (using legs is not correct between the blocks)
@@ -123,6 +132,10 @@ class Hero {
 				floor = i + (1 - mx / map.cellHeight); 
 				floorName = 'uphill'; 
 				break; 
+			} else if (map.pass[i][m] == 4) {
+				floor = i + 0.5; 
+				floorName = 'half';
+				break;
 			}
 		var floorPx = floor * map.cellHeight; // floor in pixels (Y)
 		
@@ -153,18 +166,19 @@ class Hero {
 		/* on the ground */
 		if (legsPx == floorPx) {
 			map.debugIns(' >> ground >>', 2); //debug
+			this.jumpTimer = 0;
 		/* in Air */
 		} else if (legsPx < floorPx) {
-			inAir = true;
+			this.inAir = true;
 			map.debugIns(' >> air >>', 2); //debug
 			// JUMP
 			if (this.jumpTimer > 0)	{
 				this.jumpTimer--;
-				if (this.R.y + map.Ph.jumpPower < ceilPx) {
+				if (this.R.y + this.jumpPower < ceilPx) {
 					this.R.y = ceilPx;
 					this.jumpTimer = 0;
 				} else 
-					this.R.y += map.Ph.jumpPower;
+					this.R.y += this.jumpPower;
 			// FALLING (or slipping)
 			} else {
 				this.R.y += map.Ph.gravity;
@@ -176,11 +190,13 @@ class Hero {
 		if (this.R.y + map.Ph.jumpPower - 3 > ceilPx && this.controls[btn.up]) {
 			if (legsPx == floorPx) {
 				this.R.y -= 3;
-				this.jumpTimer = map.Ph.jumpLength;
+				this.jumpPower = map.Ph.jumpPower;
+				this.jumpTimer = map.Ph.jumpDuration;
 			}
 			else if ((map.pass[legs][m] == 2 || map.pass[legs][m] == 3) && legsPx >= floorPx - map.Ph.run) {
 				this.R.y -= 3;
-				this.jumpTimer = map.Ph.jumpLength;
+				this.jumpPower = map.Ph.jumpPower;
+				this.jumpTimer = map.Ph.jumpDuration;
 			}
 		}
 		
@@ -192,7 +208,7 @@ class Hero {
 		}
 		
 		/* Crawling */
-		if (!inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3))
+		if (!this.inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3))
 			dx = map.Ph.crawling * (this.controls[btn.right] - this.controls[btn.left]);
 		
 		/* Check horizontal barriers*/
@@ -201,11 +217,11 @@ class Hero {
 		
 		/* Climbing */
 		// * it's must be after checking h-barriers
-		if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left]) {
+		if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left] && map.pass[head][left] != 1) {
 			dx = -1 * map.Ph.climbing;
 			this.R.y -= map.Ph.climbing;
 		}
-		if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right]) {
+		if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right] && map.pass[head][right] != 1) {
 			dx = map.Ph.climbing;
 			this.R.y -= map.Ph.climbing;
 		}
@@ -225,28 +241,34 @@ class Hero {
 		if (this.R.y + this.R.h > floorPx) this.R.y = floorPx - this.R.h; // FIX to the ground
 		
 		/* Set action */
-		if (inAir && (this.controls[btn.left] + this.controls[btn.right]) && (map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.climbing;
-		else if (inAir && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)) this.action = act.slipping;		
+		if (this.inAir && (this.controls[btn.left] + this.controls[btn.right]) && (map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.climbing;
+		else if (this.inAir && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)) this.action = act.slipping;		
 		else if (this.R.y + this.R.h < floorPx - 10) this.action = act.jump;
 		else if (this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.crawling;
 		else if (dx != 0) this.action = act.run;
 		else this.action = act.stop;
 		
 		/* Draw sprite */
-		n = (dx) ? 1 - n : 0;
+		this.n = (dx) ? 1 - this.n : 0;
 		switch (this.action) {
 			case act.stop: 
 				this.draw((this.direction > 0) ? 11 : 5); break; 
 			case act.crawling: 
-				this.draw((this.direction > 0) ? 6 + n : 0 + n); break; 
+				this.draw((this.direction > 0) ? 6 + this.n : 0 + this.n); break; 
 			case act.run:  
 			case act.climbing:
-				this.draw((this.direction > 0) ? 9 + n : 3 + n); break; 
+				this.draw((this.direction > 0) ? 9 + this.n : 3 + this.n); break; 
 			case act.slipping:
 				this.draw((this.direction > 0) ? 9 : 3); break; 
 			case act.jump: 
 				this.draw((this.direction > 0) ? 8 : 2); break; 
 		}
+	}
+	
+	doJump(start, power, duration) {
+		this.R.y += start * 1.0;
+		this.jumpPower = power * 1.0;
+		this.jumpTimer = duration * 1.0;
 	}
 	
 	loadSprites(y) {
@@ -285,23 +307,26 @@ class Hero {
 /* >> 01. MAP >> >> */
 
 class Entity {
-	constructor (x, y, n) {
+	constructor (x, y, sprite) {
 		this.x = x;
 		this.y = y;
-		this.n = n;
+		this.sprite = sprite;
+		this.prevSprite = -1;
 	}
 }
 
 class Physics {
-	constructor (g = 10, jP = -5, jL = 11, c = 3, r = 6, cl = 3, sl = 2) {
+	constructor (g = 10, jP = -6, jD = 12, c = 3, r = 6, cl = 3, sl = 2, gc = -16, gcD = 14) {
 		this.gravity = g; 			// X px per timer-period in falling
 		this.jumpPower = jP;			// X px in lift
-		this.jumpLength = jL; 		// Jump period in timer-periods
-											// *Full height of jump = jumpPower * jumpTimer + 3. 
+		this.jumpDuration = jD; 	// Jump period in timer-periods
+											// *Full height of jump = jumpPower * jumpDuration + startImpulse. 
 		this.crawling = c;			// X px in crawling step
 		this.run = r;					// X px in run step
 		this.climbing = cl;			// X px in climbing
 		this.slipping = sl;			// X px in slipping
+		this.gravityCanon = gc;		// X px in lift after gravity canon effect
+		this.gcDuration = gcD;		//
 	}
 }
 
@@ -315,6 +340,8 @@ class Map {
 		this.cellWidth = 32;
 		this.cellHeight = 32;
 		this.heroView = 250; 
+		
+		this.gameTimer = 0;
 		
 		/* Landscape pictures */
 		this.scape = new Array(
@@ -331,8 +358,8 @@ class Map {
 		/* Entity pictures */
 		this.look = new Array(
 			"dropship.gif",					// D
-			"gravityCanon.gif",				// J
-			"gravityCanonExtended.gif",	// j
+			"gravityCanonExtended.gif",	// J
+			"gravityCanon.gif",				// j
 			"warpGate.gif",					// W
 			"flagBlue.gif",					// B
 			"flagRed.gif",						// R
@@ -341,10 +368,12 @@ class Map {
 			"armory.gif",						// A
 			"stimpack.gif"						// S
 		);
-		this.lookTranslation = 'DJJWBRFGAS';
+		this.lookTranslation = 'DJjWBRFGAS'; // look indexes
 		this.entity = new Array();
 		
-		this.passability = 'H D^JWBRGAS';
+		this.passability = 'H D^WBRGAS'; // passability = 0 (can pass)
+		
+		this.passTranslation = '**><j'; // passability indexes (>=2)
 		
 		/* Default Map structure */
 		// *H is for hero start point
@@ -358,31 +387,14 @@ class Map {
 			"                                                            ",
 			"                                                            ",
 			"                                                            ",
-			"                                                           R",
-			"                                                          ==",
-			"                                                          ##",
-			" =                                                     =  ##",
-			"H                                                         ##",
-			"==>   <>          =                                 =     ##",
-			"###> <##>         #        <=                 ==          ##",
-			"####=####^^^=^^^=^#^^^===^^##^^^==^^^==^^^=^=^##^=^^^^^^^^##"
-		);
-		
-		var newDebugStructure = new Array(
-			"____________________________________________________________",
-			"D                                                           ",
-			"                                                            ",
-			"                                                            ",
-			"                                                            ",
-			"                                                            ",
-			"                  =                                       R ",
+			"                  =                                        R",
 			"                  #                                       ==",
 			"                  #                                       ##",
-			"                  #                                    FF ##",
+			" =                #                                    =  ##",
 			"H                 #                                       ##",
-			"======>           #                                FFF    ##",
-			"#######>        J #        <=   J             FF          ##",
-			"########=^^^=^^^=^#^^^===^^##^^^==^^^==^^^=^=^^^^=^^^^^^^^##"
+			"==>   <>          #         J                       =     ##",
+			"###> <##>       J #        <=      J          ==          ##",
+			"####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##"
 		);
 	}
 	
@@ -430,8 +442,14 @@ class Map {
 	}
 	
 	load(hero, str = '') {
+		this.gameTimer = 0;
+	
 		if (str != '')
 			this.structure = str.split('\n');
+			
+		/* Physics */
+		this.Ph = new Physics(); 
+		//this.Ph = new Physics(10, -6, 12, 3, 6, 3, 2, -10);
 			
 		this.screenFrozen = false;
 		this.P = new Point(0, 0);
@@ -440,6 +458,8 @@ class Map {
 		hero.jumpTimer = 0;
 		var m = document.getElementById("deep-space");
 		if (m != null) m.style.left = this.P.x + 'px';
+		
+		this.triggers = new Array();
 		
 		// Duplicate string-map with byte-map
 		// * Create passability byte matrix (0/1) is probably faster operating with 
@@ -450,12 +470,11 @@ class Map {
 		{
 			this.pass[i] = new Array(this.structure[i].length);
 			for (var j = 0; j < this.structure[i].length; j++) {
-				if (this.passability.indexOf(this.structure[i][j]) >= 0)
+				// Passability Types
+				if (this.passTranslation.indexOf(this.structure[i][j]) >= 2)	
+					this.pass[i][j] = this.passTranslation.indexOf(this.structure[i][j]);
+				else if (this.passability.indexOf(this.structure[i][j]) >= 0)
 					this.pass[i][j] = 0; // hero can pass
-				else if (this.structure[i][j] == '>')
-					this.pass[i][j] = 2;
-				else if (this.structure[i][j] == '<')
-					this.pass[i][j] = 3;
 				else
 					this.pass[i][j] = 1;
 				// Start & Finish point
@@ -472,35 +491,246 @@ class Map {
 				if (x >= 0) {
 					let en = new Entity(j, i, x);
 					this.entity.push(en);
+					if (this.structure[i][j] == 'J') {
+						var text = '';
+						var id = this.entity.length - 1;
+						text = '?landed:en:' + id + '\n' 
+								+ '00 sprite:en:' + id + ':2\n'
+								+ '00 pass:en:' + id + ':4\n'
+								+ '10 ?landed:en:' + id 
+									+ ' jump:-20:' + this.Ph.gravityCanon + ':' + this.Ph.gcDuration + '\n'
+								+ '10 sprite:en:' + id + ':1\n'
+								+ '10 pass:en:' + id + ':1\n'
+								+ 'R 20';
+						this.triggers.push(new Trigger(text));
+					}
 				}
 			}
-		}		
-		/* Physics */
-		//this.Ph = new Physics(); 
-		this.Ph = new Physics(10, -6, 12, 3, 6, 3, 2);
-	}
-	
-	drawEntity() {
-		for (var i = 0; i < this.entity.length; i++) {
-			var en = document.getElementById('entity' + i);
-			if (en == null) {
-				en = document.createElement('img');
-				en.id = 'entity' + i;
-				en.src = 'entity/' + this.planet + '/' + this.look[this.entity[i].n];
-				en.width = this.cellWidth;
-				en.height = this.cellHeight;
-				en.className = 'entity';
-				document.body.appendChild(en);
-			}
-			en.style.left = (this.entity[i].x * this.cellWidth + this.P.x) + 'px'; 
-			en.style.top = (this.entity[i].y * this.cellHeight + this.P.y) + 'px';
+			//console.log(this.pass[i]);
 		}
 	}
+	
+	setEntity(i) {
+		var en = document.getElementById('entity' + i);
+		if (en == null) {
+			en = document.createElement('img');
+			en.id = 'entity' + i;
+			en.width = this.cellWidth;
+			en.height = this.cellHeight;
+			en.className = 'entity';
+			document.body.appendChild(en);
+		}
+		if (this.entity[i].sprite != this.entity[i].prevSprite) {
+			en.src = 'entity/' + this.planet + '/' + this.look[this.entity[i].sprite];
+			this.entity[i].prevSprite = this.entity[i].sprite;
+		}
+		en.style.left = (this.entity[i].x * this.cellWidth + this.P.x) + 'px'; 
+		en.style.top = (this.entity[i].y * this.cellHeight + this.P.y) + 'px';
+	}
+	
+	// id >= 0 - draw concrete entity, id == -1 - draw everything
+	drawEntity(id = -1) {
+		if (id >= 0) this.setEntity(id);
+		else for (var i = 0; i < this.entity.length; i++) this.setEntity(i);
+	}
+
 }
 
 
 
-/* >> 02. KEYBOARD >> >> */
+/* >> 02. TRIGGERS >> >> */
+/*
+	Structure:
+		main Led
+		timer: [?(!)led:transcription] mission:parameters
+		Restore timer
+	
+	Gragity Canon Example:
+		?landed:en:id
+		00 sprite:en:id:2
+		00 pass:en:id:4
+		10 ?landed:en:id jump:SI:GC:GCL
+		10 sprite:en:id:1
+		10 pass:en:id:1
+		R 20
+*/
+
+// ENUM led
+var led = Object.freeze({"empty": -1, "landed": 0, "inSquare": 1, "vertical": 2, "onScreen": 3});
+// ENUM subject
+var sub = Object.freeze({"entity": 0, "foe": 1, "cell": 2});
+// ENUM task
+var tsk = Object.freeze({"sprite": 0, "pass": 1, "jump": 2 }); //...
+
+
+class Led {	
+	constructor(ledString) {
+		if (typeof(ledString) === 'undefined') {
+			this.kind = led.empty;
+			return;
+		}
+		var parts = ledString.split(':');
+		this.mode = (parts[0][0] == '?') ? true : false;
+		switch (parts[0].substring(1)) {
+			case "landed": this.kind = led.landed; break;
+			case "inSquare": this.kind = led.inSquare; break;
+			case "vertical": this.kind = led.vertical; break;
+			case "onScreen": this.kind = led.onScreen; break;
+		}
+		switch (parts[1]) {
+			case "en": this.aspect = sub.entity; break;
+			case "fo": this.aspect = sub.foe; break;
+			case "ce": this.aspect = sub.cell; break;
+		}
+		switch (this.aspect) {
+			case sub.entity:
+			case sub.foe:
+				this.id = parts[2] * 1.0;
+				this.x = -1;
+				this.y = -1;
+				break;
+			case sub.cell:
+				this.id = -1;
+				this.x = parts[2] * 1.0;
+				this.y = parts[3] * 1.0;
+				break;
+		}
+	}
+	
+	check(hero, map) {
+		if (this.kind == led.empty) return true;
+		switch (this.kind) {
+			case led.landed: 
+				var x = Math.floor((hero.R.x - map.P.x + hero.R.w / 2) / map.cellWidth); // horizontal index for the middle of hero body
+				var y = Math.floor((hero.R.y - map.P.y) / map.cellHeight); //vertical index for the head of hero
+				switch (this.aspect) {
+					case sub.entity:
+					case sub.foe:
+						if ((x == map.entity[this.id].x && y + 1 == map.entity[this.id].y && !hero.inAir) == this.mode) return true;
+						break;
+					case sub.cell:
+						if ((x == this.x && y + 1 == this.y && !hero.inAir) == this.mode) return true;
+						break;
+				}
+				break;
+			case led.inSquare: break;
+			case led.vertical: break;
+			case led.onScreen: break;	
+		}
+		return false;
+	}	
+}
+
+class Task {
+	constructor(taskString) {
+		var parts = taskString.split(':');
+		//this.mission = -1;
+		switch (parts[0]) {
+			case "sprite": this.mission = tsk.sprite; break;
+			case "pass": this.mission = tsk.pass; break;
+			case "jump": this.mission = tsk.jump; break;
+		}
+		this.params = new Array();
+		for (var i = 1; i < parts.length; i++) {
+			var el = parts[i];
+			if (['en', 'fo', 'ce'].includes(parts[i])) el = ['en', 'fo', 'ce'].indexOf(parts[i]);
+			this.params.push(el);
+		}
+	}
+}
+
+class RosterLine {	
+	constructor(timer, taskString, ledString) {
+		this.timer = timer * 1.0;
+		this.T = new Task(taskString);
+		//if (typeof(ledString) !== 'undefined') 
+		this.led = new Led(ledString);
+	}
+}
+
+class Trigger {
+	
+	constructor(rosterText) {
+		this.restore = -1;
+		this.roster = new Array();
+		this.timer = -1;
+		var lines = rosterText.split('\n');		
+		for (var i = 0; i < lines.length; i++)
+			if (lines[i].trim() === '') 
+				break;
+			else if (lines[i].startsWith('#')) 
+				continue;
+			/* main led */
+			else if (lines[i].startsWith('?') || lines[i].startsWith('!')) {
+				this.butterfly = new Led(lines[i]);
+			/* restore trigger timer */
+			} else if (lines[i].toUpperCase().startsWith('R')) {
+				this.restore = lines[i].split(' ')[1] * 1.0;
+			/* common line */
+			} else {
+				var parts = lines[i].split(' ');
+				if (parts[1].startsWith('?') || parts[1].startsWith('!'))
+					this.roster.push(new RosterLine(parts[0], parts[2], parts[1]));
+				else 
+					this.roster.push(new RosterLine(parts[0], parts[1]));
+			}
+	}
+	
+	launcher(hero, map) {
+		if (this.timer == -1 && this.butterfly.check(hero, map)) {
+			map.debugIns('Trigger launched', 3);
+			this.timer = 0;
+		}
+		if (this.timer >= 0) {
+			for (var i = 0; i < this.roster.length; i++)
+				if (this.roster[i].timer == this.timer && this.roster[i].led.check(hero, map)) {
+					map.debugIns('Trigger roster: ' + i, 3);
+					switch (this.roster[i].T.mission) {
+						case tsk.sprite: 
+							switch (this.roster[i].T.params[0]) {
+								case sub.entity:
+								case sub.foe:
+									map.entity[this.roster[i].T.params[1] * 1.0].sprite = this.roster[i].T.params[2] * 1.0;
+									map.drawEntity(this.roster[i].T.params[1] * 1.0);
+									break;
+								case sub.cell:	break;
+							}
+							break;
+						case tsk.pass: 
+							var x = 0, y = 0, p = 0;
+							switch (this.roster[i].T.params[0]) {
+								case sub.entity:
+								case sub.foe:
+									x = map.entity[this.roster[i].T.params[1] * 1.0].x;
+									y = map.entity[this.roster[i].T.params[1] * 1.0].y;
+									p = this.roster[i].T.params[2] * 1.0;
+									break;
+								case sub.cell:	
+									x = this.roster[i].T.params[1] * 1.0;
+									y = this.roster[i].T.params[2] * 1.0;
+									p = this.roster[i].T.params[3] * 1.0;									
+									break;
+							}
+							map.pass[y][x] = p;
+							break;
+						case tsk.jump: 
+							hero.doJump(this.roster[i].T.params[0], this.roster[i].T.params[1], this.roster[i].T.params[2]);
+							break;
+					}
+				}
+			if (this.timer < 10000) this.timer++;
+			if (this.timer == this.restore) {
+				map.debugIns('Trigger finished', 3);
+				this.timer = -1;
+			}
+		}
+	}
+	
+}
+
+
+
+/* >> 03. KEYBOARD >> >> */
 
 function KeyDown(e)
 {
@@ -572,20 +802,22 @@ function KeyUp(e)
 
 
 
-/* >> 03. START >> >> */
+/* >> 04. START >> >> */
 
 var screenWidth = 640;
 
 var hero = new Hero('Jimmy');
 var map = new Map('jupiter', 'space.jpg', true);
 map.load(hero, '');
+
 map.drawStructure();
 map.drawEntity();
 hero.loadSprites(600);
 hero.draw(11);
 
 var interval = 50;
-var gameProcess; 
+var gameProcess;
+
 game();
 
 // Game Process
@@ -594,16 +826,19 @@ function game() {
 	
 	/* Check Finish */
 	if (hero.R.isCrossWith(map.finish, map.P.x)) {
-		map.debug('Finish!');
-		return;
+		map.debugIns('Level complete!', 3);
+		map.load(hero, '');
 	}
 	
 	/* Check fell into chasm */
-	if (hero.R.bottom >= map.height) {
-		map.debug('Fell into chasm :(');
+	if (hero.R.bottom >= map.height - map.cellHeight / 2) {
+		map.debugIns('Fell into chasm :(', 3);
 		map.load(hero, '');
-		//return;
 	}
+	
+	/* Triggers */
+	for (var i = 0; i < map.triggers.length; i++) 
+		map.triggers[i].launcher(hero, map);
 	
 	/* Check Hero died from Enemy */
 	//...
@@ -623,6 +858,7 @@ function game() {
 	/* Hero movement */
 	hero.movement(map);
 
+	map.gameTimer++;
 	gameProcess = setTimeout("game()", interval);
 }
 
