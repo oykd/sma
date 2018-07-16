@@ -12,11 +12,13 @@
 
 	<link rel="shortcut icon" href="icon.png" type="image/x-icon" />
 	
+<script> setTimeout(function op() { document.getElementById("game").focus(); } , 500); </script>
+	
 </head>
 
 	<frameset rows="480,*" border="1px">
 		<frameset cols="640,*" border="1px">
-			<frame src="game.htm" style="overflow:none;" scrolling="no" scroll=no noresize>
+			<frame id="game" src="game.htm" style="overflow:none;" scrolling="no" scroll=no noresize>
 		</frameset>
 	</frameset>
 	

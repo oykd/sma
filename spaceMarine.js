@@ -1,8 +1,8 @@
 /*
 	Space Marine Adventures v 1.2 Alpha
-		© 2018 onyokneesdog
+		В© 2018 onyokneesdog
 	
-	last edit: 14.07.2018
+	last edit: 16.07.2018
 	
 	>> >> >>
 	Contents:
@@ -14,10 +14,14 @@
 		
 	>> >> >>
 	Notes:
-		xx. legsPx in hero.movement should be calculated with map.P.y (later)
-		00. Add warpzone
+		xx. Test vertical type maps 
+			legsPx in hero.movement should be calculated with map.P.y (later)
+		00. There are some issues with triggers playing in the same time... 
+			"Hello triggers" -> secretblock -> warp zone -> hello triggers repeats wtf?..
 		01. Add fall of blocks
 */
+
+
 
 class Point {
 	constructor (x, y) {
@@ -52,7 +56,7 @@ class Rect {
 	}	
 }
 
- 
+
 
 /* >> 00. HERO >> >> */
 
@@ -96,7 +100,11 @@ class Hero {
 		);
 	}
 	
-	movement(map) {		
+	movement(map) {
+		/* Map coords fix */
+		if (map.P.x > 0) map.P.x = 0;
+		if (map.P.x < (map.width - screenWidth) * -1) map.P.x = (map.width - screenWidth) * -1;
+		
 		/* Save direction */
 		if (this.controls[btn.left]) this.direction = -1;
 		if (this.controls[btn.right]) this.direction = 1;
@@ -176,7 +184,8 @@ class Hero {
 				this.jumpTimer--;
 				if (this.R.y + this.jumpPower < ceilPx) {
 					this.R.y = ceilPx;
-					this.jumpTimer = 0;
+					this.jumpTimer = 2;
+					this.jumpPower = 0;
 				} else 
 					this.R.y += this.jumpPower;
 			// FALLING (or slipping)
@@ -306,27 +315,15 @@ class Hero {
 
 /* >> 01. MAP >> >> */
 
+// ENUM pointers in map text
+var ptr = Object.freeze({"none": 0, "lobby": 1, "gear": 2, "machinery": 3, "structure": 4});
+
 class Entity {
 	constructor (x, y, sprite) {
 		this.x = x;
 		this.y = y;
 		this.sprite = sprite;
 		this.prevSprite = -1;
-	}
-}
-
-class Physics {
-	constructor (g = 10, jP = -6, jD = 12, c = 3, r = 6, cl = 3, sl = 2, gc = -16, gcD = 14) {
-		this.gravity = g; 			// X px per timer-period in falling
-		this.jumpPower = jP;			// X px in lift
-		this.jumpDuration = jD; 	// Jump period in timer-periods
-											// *Full height of jump = jumpPower * jumpDuration + startImpulse. 
-		this.crawling = c;			// X px in crawling step
-		this.run = r;					// X px in run step
-		this.climbing = cl;			// X px in climbing
-		this.slipping = sl;			// X px in slipping
-		this.gravityCanon = gc;		// X px in lift after gravity canon effect
-		this.gcDuration = gcD;		//
 	}
 }
 
@@ -343,6 +340,37 @@ class Map {
 		
 		this.gameTimer = 0;
 		
+		/* gears -> triggers, after map.load */
+		this.gears = new Array(
+			/* Specific trigger for every "J" on the map */
+			{
+				sym: 'J',
+				trigger: '?landed:en:#\n00 sprite:en:#:2\n00 pass:en:#:4\n10 ?landed:en:# jump:-20:-16:14\n10 sprite:en:#:1\n10 pass:en:#:1\nR 20'
+			},
+			/* Just trigger (sym should be = "") */
+			{
+				sym: '',
+				trigger: '50 message:hello:350:330:0:Hello, cosmonaut!\n150 clear:hello'
+			},
+			{
+				sym: '',
+				trigger: '100 message:tooltip:350:345:0:This is test map for SMA.\n200 clear:tooltip'
+			},
+			{
+				sym: '',
+				trigger: '150 message:goodluck:350:360:0:Good luck in your little journey.\n250 clear:goodluck'
+			}
+		);		
+		
+		this.Ph = new Object();
+		this.Ph.gravity = 10; // X px per timer-period in falling
+		this.Ph.jumpPower = -6; // X px in lift
+		this.Ph.jumpDuration = 12; // Jump period in timer-periods
+		this.Ph.crawling = 3; // X px in crawling step
+		this.Ph.run = 6; // X px in run step
+		this.Ph.climbing = 3; // X px in climbing
+		this.Ph.slipping = 2; // X px in slipping
+		
 		/* Landscape pictures */
 		this.scape = new Array(
 			"air.gif", 				// space
@@ -351,9 +379,10 @@ class Map {
 			"mid.gif",				// #
 			"slit.gif", 			// _
 			"surface.gif", 		// =
-			"uphill.gif"			// <
+			"uphill.gif",			// <
+			"invisible.gif"		// X
 		);
-		this.scapeTranslation = ' ^>#_=<';
+		this.scapeTranslation = ' ^>#_=<X';
 		
 		/* Entity pictures */
 		this.look = new Array(
@@ -375,11 +404,7 @@ class Map {
 		
 		this.passTranslation = '**><j'; // passability indexes (>=2)
 		
-		/* Default Map structure */
-		// *H is for hero start point
-		// *R is for finish
-		
-		//easy & simple for now
+		/* Demo Map structure */
 		this.structure = new Array(
 			"____________________________________________________________",
 			"D                                                           ",
@@ -390,11 +415,11 @@ class Map {
 			"                  =                                        R",
 			"                  #                                       ==",
 			"                  #                                       ##",
-			" =                #                                    =  ##",
+			" =                #                                    F  ##",
 			"H                 #                                       ##",
-			"==>   <>          #         J                       =     ##",
-			"###> <##>       J #        <=      J          ==          ##",
-			"####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##"
+			"==>   <>          #         J                       F     ##",
+			"###> <##>       J #        <=      J          FFFF        ##",
+			"####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##"
 		);
 	}
 	
@@ -441,33 +466,72 @@ class Map {
 		}
 	}
 	
-	load(hero, str = '') {
+	load(hero, mapText) {
 		this.gameTimer = 0;
-	
-		if (str != '')
-			this.structure = str.split('\n');
-			
-		/* Physics */
-		this.Ph = new Physics(); 
-		//this.Ph = new Physics(10, -6, 12, 3, 6, 3, 2, -10);
-			
-		this.screenFrozen = false;
-		this.P = new Point(0, 0);
 		
+		if (typeof(this.triggers) !== 'undefined')
+			this.finalizeTriggers(hero);
+		
+		/* Load from text */
+		if (typeof(mapText) !== 'undefined') {
+			this.gears = new Array();
+			var value;
+			/* options */
+			value = readValue(mapText, 'options', 'debug');
+			if (value !== false) this.debug = (value.toUpperCase() == 'YES') ? true : false;
+			value = readValue(mapText, 'options', 'planet');
+			if (value !== false) this.planet = value;
+			value = readValue(mapText, 'options', 'background');
+			if (value !== false) this.background = value;
+			value = readValue(mapText, 'options', 'heroView');
+			if (value !== false) this.heroView = value * 1.0;
+			/* Physics */
+			value = readSection(mapText, 'physics');
+			if (value !== false) {
+				this.Ph = fusion(this.Ph, value);
+				var keys = Object.keys(this.Ph);
+				for (var i = 0; i < keys.length; i++) 
+					this.Ph[keys[i]] = this.Ph[keys[i]] * 1.0;
+			}
+			/* Structure */
+			value = readStrings(mapText, 'map', 'structure');
+			if (value !== false) {
+				this.structure = new Array();
+				for (var i = 0; i < value.length; i++)
+					this.structure.push(value[i].substring(1, value[i].length - 1));
+			}
+			/* Triggers */
+			value = readValue(mapText, 'triggers', 'gears');
+			if (value !== false)
+				for (var i = 0; i < value.length; i++)
+					this.gears.push({sym: value[i], trigger: buildString(readStrings(mapText, 'triggers', value[i]), '\n')});
+			value = readStrings(mapText, 'triggers', 'machinery');
+			if (value !== false) {
+				var t = '';
+				for (var i = 0; i < value.length; i++)
+					if ((value[i] == '' || i == value.length - 1) && comTrim(t) != '') {
+						if (i == value.length - 1) t += '\n' + value[i];
+						this.gears.push({sym: '', trigger: t});
+					}
+					else
+						t += (t != '') ? '\n' + value[i] : value[i];
+			}
+			/* end of reading */
+		}
+		
+		this.screenFrozen = false;
+		this.P = new Point(0, 0);		
 		hero.clearControls();
 		hero.jumpTimer = 0;
 		var m = document.getElementById("deep-space");
 		if (m != null) m.style.left = this.P.x + 'px';
-		
 		this.triggers = new Array();
 		
 		// Duplicate string-map with byte-map
 		// * Create passability byte matrix (0/1) is probably faster operating with 
 		this.pass = new Array(this.structure.length);
-		
 		this.entity = new Array();
-		for (var i = 0; i < this.structure.length; i++)
-		{
+		for (var i = 0; i < this.structure.length; i++) {
 			this.pass[i] = new Array(this.structure[i].length);
 			for (var j = 0; j < this.structure[i].length; j++) {
 				// Passability Types
@@ -491,23 +555,14 @@ class Map {
 				if (x >= 0) {
 					let en = new Entity(j, i, x);
 					this.entity.push(en);
-					if (this.structure[i][j] == 'J') {
-						var text = '';
-						var id = this.entity.length - 1;
-						text = '?landed:en:' + id + '\n' 
-								+ '00 sprite:en:' + id + ':2\n'
-								+ '00 pass:en:' + id + ':4\n'
-								+ '10 ?landed:en:' + id 
-									+ ' jump:-20:' + this.Ph.gravityCanon + ':' + this.Ph.gcDuration + '\n'
-								+ '10 sprite:en:' + id + ':1\n'
-								+ '10 pass:en:' + id + ':1\n'
-								+ 'R 20';
-						this.triggers.push(new Trigger(text));
-					}
+					for (var z = 0; z < this.gears.length; z++)
+						if (this.gears[z].sym == this.structure[i][j])
+							this.triggers.push(new Trigger(this.gears[z].trigger.replace(new RegExp('#', 'g'), this.entity.length - 1)));
 				}
 			}
-			//console.log(this.pass[i]);
 		}
+		for (var i = 0; i < this.gears.length; i++) 
+			if (this.gears[i].sym == '') this.triggers.push(new Trigger(this.gears[i].trigger));
 	}
 	
 	setEntity(i) {
@@ -532,6 +587,11 @@ class Map {
 	drawEntity(id = -1) {
 		if (id >= 0) this.setEntity(id);
 		else for (var i = 0; i < this.entity.length; i++) this.setEntity(i);
+	}
+	
+	finalizeTriggers(hero) {
+		for (var i = 0; i < this.triggers.length; i++)
+			this.triggers[i].finalize(hero, this);
 	}
 
 }
@@ -560,8 +620,7 @@ var led = Object.freeze({"empty": -1, "landed": 0, "inSquare": 1, "vertical": 2,
 // ENUM subject
 var sub = Object.freeze({"entity": 0, "foe": 1, "cell": 2});
 // ENUM task
-var tsk = Object.freeze({"sprite": 0, "pass": 1, "jump": 2 }); //...
-
+var tsk = Object.freeze({"sprite": 0, "pass": 1, "jump": 2, "teleport": 3, "message": 4, "clear": 5}); 
 
 class Led {	
 	constructor(ledString) {
@@ -613,7 +672,19 @@ class Led {
 						break;
 				}
 				break;
-			case led.inSquare: break;
+			case led.inSquare: 
+				var x = Math.floor((hero.R.x - map.P.x + hero.R.w / 2) / map.cellWidth); 
+				var y = Math.floor((hero.R.y - map.P.y + hero.R.h / 2) / map.cellHeight);
+				switch (this.aspect) {
+					case sub.entity:
+					case sub.foe:
+						if ((x == map.entity[this.id].x && y == map.entity[this.id].y) == this.mode) return true;
+						break;
+					case sub.cell:
+						if ((x == this.x && y == this.y) == this.mode) return true;
+						break;
+				}				 
+				break;
 			case led.vertical: break;
 			case led.onScreen: break;	
 		}
@@ -629,6 +700,9 @@ class Task {
 			case "sprite": this.mission = tsk.sprite; break;
 			case "pass": this.mission = tsk.pass; break;
 			case "jump": this.mission = tsk.jump; break;
+			case "teleport": this.mission = tsk.teleport; break;
+			case "message": this.mission = tsk.message; break;
+			case "clear": this.mission = tsk.clear; break;
 		}
 		this.params = new Array();
 		for (var i = 1; i < parts.length; i++) {
@@ -654,6 +728,7 @@ class Trigger {
 		this.restore = -1;
 		this.roster = new Array();
 		this.timer = -1;
+		this.butterfly = new Led();
 		var lines = rosterText.split('\n');		
 		for (var i = 0; i < lines.length; i++)
 			if (lines[i].trim() === '') 
@@ -668,12 +743,28 @@ class Trigger {
 				this.restore = lines[i].split(' ')[1] * 1.0;
 			/* common line */
 			} else {
-				var parts = lines[i].split(' ');
-				if (parts[1].startsWith('?') || parts[1].startsWith('!'))
-					this.roster.push(new RosterLine(parts[0], parts[2], parts[1]));
-				else 
-					this.roster.push(new RosterLine(parts[0], parts[1]));
+				var parts = lines[i].split(' ');			
+				if (parts[1].startsWith('?') || parts[1].startsWith('!')) {
+					var s = ''; 
+					for (var j = 2; j < parts.length; j++)
+						s += (j + 1 != parts.length) ? parts[j] + ' ': parts[j];
+					this.roster.push(new RosterLine(parts[0], s, parts[1]));
+				} else {
+					var s = '';
+					for (var j = 1; j < parts.length; j++)
+						s += (j + 1 != parts.length) ? parts[j] + ' ': parts[j];
+					this.roster.push(new RosterLine(parts[0], s));
+				}
 			}
+	}
+	
+	finalize(hero, map) {
+		if (this.timer >= 0)
+			for (var i = 0; i < this.roster.length; i++)
+				if (this.roster[i].timer > this.timer) {
+					this.timer = this.roster[i].timer;
+					this.launcher(hero, map);
+				}
 	}
 	
 	launcher(hero, map) {
@@ -686,6 +777,7 @@ class Trigger {
 				if (this.roster[i].timer == this.timer && this.roster[i].led.check(hero, map)) {
 					map.debugIns('Trigger roster: ' + i, 3);
 					switch (this.roster[i].T.mission) {
+						/* Change sprite */
 						case tsk.sprite: 
 							switch (this.roster[i].T.params[0]) {
 								case sub.entity:
@@ -693,9 +785,12 @@ class Trigger {
 									map.entity[this.roster[i].T.params[1] * 1.0].sprite = this.roster[i].T.params[2] * 1.0;
 									map.drawEntity(this.roster[i].T.params[1] * 1.0);
 									break;
-								case sub.cell:	break;
+								case sub.cell:	
+									
+									break;
 							}
 							break;
+						/* Change map passability */
 						case tsk.pass: 
 							var x = 0, y = 0, p = 0;
 							switch (this.roster[i].T.params[0]) {
@@ -713,8 +808,49 @@ class Trigger {
 							}
 							map.pass[y][x] = p;
 							break;
+						/* Hero jump */
 						case tsk.jump: 
 							hero.doJump(this.roster[i].T.params[0], this.roster[i].T.params[1], this.roster[i].T.params[2]);
+							break;
+						/* Hero teleport */
+						case tsk.teleport: 	
+							var x = this.roster[i].T.params[0] * map.cellWidth;
+							var y = this.roster[i].T.params[1] * map.cellHeight;
+							if (x > map.heroView) {
+								if (x - map.heroView > map.width - screenWidth) {
+									map.P.x = screenWidth - map.width;
+									hero.R.x = x + map.P.x;
+								} else {
+									hero.R.x = map.heroView;
+									map.P.x = map.heroView - x;
+								}
+							} else {
+								hero.R.x = x;
+								map.P.x = 0;
+							}
+							hero.R.y = y; //it's should be replaced for vertical-type maps... but not now
+							hero.jumpTimer = 0;
+							document.getElementById("deep-space").style.left = map.P.x + 'px';
+							map.drawEntity();
+							break;
+						/* Message on the screen */
+						case tsk.message:
+							var el = document.getElementById(this.roster[i].T.params[0]);
+							if (el == null) {
+								el = document.createElement('div');
+								el.id = this.roster[i].T.params[0];
+								el.className = 'message';								
+								document.body.appendChild(el);
+							}
+							el.style.left = this.roster[i].T.params[1] + 'px'; 
+							el.style.top = this.roster[i].T.params[2] + 'px';
+							el.width = this.roster[i].T.params[3] + 'px';
+							el.innerHTML = this.roster[i].T.params[4];
+							break;
+						/* Clear message */
+						case tsk.clear: 
+							var el = document.getElementById(this.roster[i].T.params[0]);
+							if (el != null) el.remove();
 							break;
 					}
 				}
@@ -808,7 +944,94 @@ var screenWidth = 640;
 
 var hero = new Hero('Jimmy');
 var map = new Map('jupiter', 'space.jpg', true);
-map.load(hero, '');
+
+//just for tests (actually it's should be read from the file)
+var mapTextExample =
+'Space marine adventures\n' + 
+'Debug Map\n' + 
+'\n' + 
+'[options]\n' + 
+'debug = yes\n' + 
+'planet = jupiter\n' + 
+'background = space.jpg\n' + 
+'\n' + 
+'[pregame]\n' + 
+'lobby:{\n' + 
+'00 start\n' + 
+'}\n' + 
+'\n' + 
+'[physics]\n' + 
+'#gravity = 10\n' + 
+'#jumpPower = -6\n' + 
+'#jumpDuration = 12\n' + 
+'crawling = 3\n' + 
+'run = 6\n' + 
+'climbing = 3\n' + 
+'slipping = 2\n' + 
+'\n' + 
+'[map]\n' + 
+'structure:{\n' + 
+'|____________________________________________________________|\n' + 
+'|D                                                           |\n' + 
+'|                                                            |\n' + 
+'|                                                            |\n' + 
+'|                                                            |\n' + 
+'|   XXX                                                      |\n' + 
+'|          W       =                                        R|\n' + 
+'|X                 #                                       ==|\n' + 
+'|                  #                                       ##|\n' + 
+'| =                #                                    =  ##|\n' + 
+'|H                 #                                       ##|\n' + 
+'|==>   <>          #         J                       =     ##|\n' + 
+'|###> <##>       J #        <=      J          ==          ##|\n' + 
+'|####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##|\n' + 
+'}\n' + 
+'\n' + 
+'[triggers]\n' + 
+'# [timing]\n' + 
+'# [?/! landed/inSquare/vertical/onScreen] {}\n' + 
+'# [sprite/pass/jump/teleport/message/clear : en/fo/ce : params]\n' + 
+'\n' + 
+'gears = JFW\n' + 
+'\n' + 
+'J:{\n' + 
+'?landed:en:#\n' + 
+'00 sprite:en:#:2\n' + 
+'00 pass:en:#:4\n' + 
+'10 ?landed:en:# jump:-20:-16:14\n' + 
+'10 sprite:en:#:1\n' + 
+'10 pass:en:#:1\n' + 
+'R 20\n' + 
+'}\n' + 
+'\n' + 
+'F:{\n' + 
+'?landed:en:#\n' + 
+'05 fall:en:#\n' + 
+'}\n' + 
+'\n' + 
+'W:{\n' + 
+'?inSquare:en:#\n' + 
+'00 teleport:50:3\n' + 
+'R 10\n' + 
+'}\n' + 
+'\n' + 
+'machinery:{\n' + 
+'50 message:hello:350:330:0:Hello, cosmonaut!\n' + 
+'150 clear:hello\n' + 
+'\n' + 
+'100 message:tooltip:350:345:0:This is test map for SMA.\n' + 
+'200 clear:tooltip\n' + 
+'\n' + 
+'150 message:goodluck:350:360:0:Good luck in your little journey.\n' + 
+'250 clear:goodluck\n' + 
+'\n' +
+'?landed:ce:0:7\n' + 
+'0 message:secret:10:200:0:You found secret block\n' + 
+'50 clear:secret\n' + 
+'}\n' + 
+'\n'
+;
+map.load(hero, mapTextExample); //tests
 
 map.drawStructure();
 map.drawEntity();
@@ -827,13 +1050,13 @@ function game() {
 	/* Check Finish */
 	if (hero.R.isCrossWith(map.finish, map.P.x)) {
 		map.debugIns('Level complete!', 3);
-		map.load(hero, '');
+		map.load(hero);
 	}
 	
 	/* Check fell into chasm */
 	if (hero.R.bottom >= map.height - map.cellHeight / 2) {
 		map.debugIns('Fell into chasm :(', 3);
-		map.load(hero, '');
+		map.load(hero);
 	}
 	
 	/* Triggers */
@@ -862,41 +1085,4 @@ function game() {
 	gameProcess = setTimeout("game()", interval);
 }
 
-
-
-
-/*
-//document.getElementById("StartButton").focus();
-
-var flashvars = {
-	mp3: "smoking-yoda.mp3",
-	javascript: "on",
-	autostart: 1,
-	autoreplay: 1,
-	volume: 50
-};
-var params = {
-	wmode: "transparent"
-};
-var attributes = {
-	id: "dewplayer"
-};
-swfobject.embedSWF("dewplayer-mini.swf", "dewplayer-js", "200", "20", "9.0.0", false, flashvars, params, attributes);
-//Включить выключить звук.. не доделано...
-function switchSound()
-{
-	var dewp = document.getElementById("dewplayer");
-	if (sound == 1)
-	{
-		document.SOUND.src = 'sound-off.png';
-		sound = 0;
-		if(dewp) dewp.dewstop();
-	}else 
-	{
-		document.SOUND.src = 'sound-on.png';
-		sound = 1;
-		if(dewp) dewp.dewplay();
-	}
-}
-*/
-
+/* The end <"-)_(-"> */

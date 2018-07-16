@@ -1,0 +1,85 @@
+Space marine adventures
+Debug Map
+
+[options]
+debug = yes
+planet = jupiter
+background = space.jpg
+
+[pregame]
+lobby:{
+00 start
+}
+
+[physics]
+gravity = 10
+jumpPower = -6
+jumpDuration = 12
+crawling = 3
+run = 6
+climbing = 3
+slipping = 2
+
+
+[map]
+structure:{
+|____________________________________________________________|
+|D                                                           |
+|                                                            |
+|                                                            |
+|                                                            |
+|                                                            |
+|                  =                                        R|
+|   W              #                                       ==|
+|                  #                                       ##|
+| =                #                                    =  ##|
+|H                 #                                       ##|
+|==>   <>          #         J                       =     ##|
+|###> <##>       J #        <=      J          ==          ##|
+|####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##|
+}
+
+[triggers]
+# [timing] 
+# [?/! landed/inSquare/vertical/onScreen] {}
+# [sprite/pass/jump/teleport/message/clear : en/fo/ce : params]
+
+gears = JFW
+
+J:{
+?landed:en:#
+00 sprite:en:#:2
+00 pass:en:#:4
+10 ?landed:en:# jump:-20:-16:14
+10 sprite:en:#:1
+10 pass:en:#:1
+R 20
+}
+
+F:{
+?landed:en:#
+05 fall:en:#
+}
+
+W:{
+?inSquare:en:#
+00 teleport:15:2
+R 01
+}
+
+machinery:{
+50 message:hello:350:330:0:Hello, cosmonaut!
+150 clear:hello
+
+100 message:tooltip:350:345:0:This is test map for SMA.
+200 clear:tooltip
+
+150 message:goodluck:350:360:0:Good luck in your little journey.
+250 clear:goodluck
+}
+
+
+
+## Map file for Space Marine Adventures (c) by onyokneesdog 2018
+## https://github.com/onyokneesdog/sma
+## http://defiler.ru/demo/sma
