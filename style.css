@@ -26,9 +26,9 @@ body {
 	z-index: 1;
 }
 
-#hero {
+.dynamic {
 	position: absolute !important;
-	z-index: 5;
+	z-index: 2;
 }
 
 .message {
@@ -38,7 +38,7 @@ body {
 	z-index: 3;
 	color: #fff;
 	background-color: #000;
-	padding: 5px;
+	padding: 4px;
 	opacity: 0.8;
 }
 
@@ -46,8 +46,13 @@ body {
 	position: absolute !important;
 	font-family: '8bit';
 	font-size: 12px;
-	z-index: 4;
+	z-index: 9;
 	color: #fff;
 	left: 20px;
 	top: 100px;
+}
+
+#hero {
+	position: absolute !important;
+	z-index: 10;
 }

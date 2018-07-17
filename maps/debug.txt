@@ -32,11 +32,11 @@ structure:{
 |                  =                                        R|
 |   W              #                                       ==|
 |                  #                                       ##|
-| =                #                                    =  ##|
+| =                #                                    F  ##|
 |H                 #                                       ##|
-|==>   <>          #         J                       =     ##|
-|###> <##>       J #        <=      J          ==          ##|
-|####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##|
+|==>   <>          #         J                       F     ##|
+|###> <##>       J #        <=      J          FFFF        ##|
+|####=####^^^^^^^=^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##|
 }
 
 [triggers]
@@ -58,7 +58,11 @@ R 20
 
 F:{
 ?landed:en:#
-05 fall:en:#
+00 sprite:en:#:0
+00 pass:en:#:0
+00 dynamic:create:en:#:32:32:0:6
+05 dynamic:move:$:0:10
+20 dynamic:destroy:$
 }
 
 W:{
@@ -76,6 +80,12 @@ machinery:{
 
 150 message:goodluck:350:360:0:Good luck in your little journey.
 250 clear:goodluck
+
+00 dynamic:create:400:410:32:32:0:6
+
+00 dynamic:move:0:-1:0
+50 dynamic:move:0:1:0
+R 100
 }
 
 

@@ -2,59 +2,44 @@
 	Space Marine Adventures v 1.2 Alpha
 		© 2018 onyokneesdog
 	
-	last edit: 16.07.2018
+	last edit: 17.07.2018
+	
+	Using: 
+		readInf.js - reading map info from some text
+		lackey.js - auxiliary classes & functions, which could be used not only for this game
 	
 	>> >> >>
 	Contents:
 		00. HERO
 		01. MAP
 		02. TRIGGERS
-		03. KEYBOARD
-		04. START
+		03. DYNAMICS
+		04. KEYBOARD
+		05. START
 		
 	>> >> >>
 	Notes:
 		xx. Test vertical type maps 
 			legsPx in hero.movement should be calculated with map.P.y (later)
-		00. There are some issues with triggers playing in the same time... 
-			"Hello triggers" -> secretblock -> warp zone -> hello triggers repeats wtf?..
-		01. Add fall of blocks
+		00. Add start impulse to the Physics..
+		
+	>> >> >>
+	Explanations:
+		map.structure - string array, which describes the solid (not dynamic) structure of the map;
+		map.pass - 2D byte array, based on structure, which indicates passability of map cells;
+				* could be dynamically changed by triggers
+		map.trigger - sequential instruction set called by special conditions;
+		map.entity - game object, which can interacts with hero, but cant moving;
+				* trigger caller
+		map.dynamic - game object, which can move and physically interacts with hero;
+				* can be created and destroyed during the game process by triggers
+				** can not be recommended as trigger caller itself
+		
+	However, precise 2D physics is not the most correct task for browser game, based on javascript. 
+	Dont be surprise by some caveman ways of realization..
+	
+	https://github.com/onyokneesdog/sma
 */
-
-
-
-class Point {
-	constructor (x, y) {
-		this.x = x;
-		this.y = y;
-	}
-}
-
-class Rect {
-	constructor (x, y, w, h) {
-		this.x = x;
-		this.y = y;
-		this.w = w;
-		this.h = h;
-	}
-	
-	get left() { return this.x }
-	
-	get top() { return this.y }
-	
-	get width() { return this.w }
-	
-	get height() { return this.h }
-	
-	get right() { return this.x + this.w }
-	
-	get bottom() {	return this.y + this.h	}
-	
-	isCrossWith(r, dx = 0, dy = 0) {
-		if (this.left <= r.right + dx && this.right >= r.left + dx && this.top <= r.bottom && this.bottom >= r.top ) return true;
-		return false;			
-	}	
-}
 
 
 
@@ -100,7 +85,7 @@ class Hero {
 		);
 	}
 	
-	movement(map) {
+	movement(map, interaction) {
 		/* Map coords fix */
 		if (map.P.x > 0) map.P.x = 0;
 		if (map.P.x < (map.width - screenWidth) * -1) map.P.x = (map.width - screenWidth) * -1;
@@ -150,11 +135,42 @@ class Hero {
 		/* Get ceil */
 		var ceil = -1; // ceil vertical index
 		for (var	i = head; i >= 0; i--)
-			if (map.pass[i][m]) { 
+			if (map.pass[i][m] == 1) { 
 				ceil = i; 
 				break; 
 			}
 		var ceilPx = (ceil + 1) * map.cellHeight; // ceil in pixels (Y)	
+		
+		/* INTERACTION */
+		var ix = 0;
+		var iy = 0;
+		var px = 0;
+		if (interaction.cross) {
+			if (interaction.left && interaction.right) return false;
+			if (interaction.floor && interaction.ceil) return false;			
+			if (interaction.floor) {
+				floorName = 'dynamic';
+				legsPx = interaction.floor;
+				floorPx = interaction.floor;
+				this.R.y = interaction.floor - this.R.h;
+				this.jumpTimer = 0;
+				this.jumpPower = 0;
+				ix = interaction.dx;
+				iy = interaction.dy;
+			}
+			if (interaction.ceil) {
+				ceilPx = (legsPx == floorPx) ? interaction.ceil : interaction.ceil + 5;				
+				this.jumpTimer = 0;
+			}
+			if (interaction.left) {
+				px = interaction.left + map.P.x - this.R.x;
+				if (floorName == 'uphill' && interaction.dy > 0) this.R.y += Math.abs(ix) * -1;
+			}
+			if (interaction.right) {
+				px = interaction.right - this.R.w + map.P.x - this.R.x;
+				if (floorName == 'downhill' && interaction.dy > 0) this.R.y += Math.abs(ix) * -1;
+			}			
+		}
 		
 		/* debug */
 		map.debugIns('Hero: ' + this.R.x + ':' + this.R.y + ' | Map: ' + map.P.x + ':' + map.P.y, 0);
@@ -216,6 +232,9 @@ class Hero {
 			this.inertia = 0;
 		}
 		
+		/* Interaction fix */
+		dx += ix;
+		
 		/* Crawling */
 		if (!this.inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3))
 			dx = map.Ph.crawling * (this.controls[btn.right] - this.controls[btn.left]);
@@ -224,30 +243,39 @@ class Hero {
 		if ((map.pass[head][left] || map.pass[legs][left] == 1 || left < 0) && dx < 0) dx = 0;
 		if ((map.pass[head][right] || map.pass[legs][right] == 1 || right > map.pass[0].length - 1) && dx > 0) dx = 0;	
 		
+		/* harsh push */
+		if (!interaction.ceil) dx += px;
+		
 		/* Climbing */
 		// * it's must be after checking h-barriers
-		if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left] && map.pass[head][left] != 1) {
-			dx = -1 * map.Ph.climbing;
-			this.R.y -= map.Ph.climbing;
-		}
-		if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right] && map.pass[head][right] != 1) {
-			dx = map.Ph.climbing;
-			this.R.y -= map.Ph.climbing;
+		if (this.R.y - map.Ph.climbing > ceilPx) {
+			if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left] && map.pass[head][left] != 1 && !interaction.left) {
+				dx = -1 * map.Ph.climbing;
+				this.R.y -= map.Ph.climbing;
+			}
+			if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right] && map.pass[head][right] != 1 && !interaction.right) {
+				dx = map.Ph.climbing;
+				this.R.y -= map.Ph.climbing;
+			}
 		}
 		
+		// Critical check
+		if (this.R.y + this.R.h > floorPx && !interaction.ceil) this.R.y = floorPx - this.R.h; // FIX to the ground
+		
 		/* Final accept DX to Hero or Map position */
+		//if (dx + ix > 0 && this.R.x + dx + ix < map.heroView || dx + ix < 0 && this.R.x + dx + ix > map.heroView) {
 		if (dx > 0 && this.R.x + dx < map.heroView || dx < 0 && this.R.x + dx > map.heroView) {
 			this.R.x += dx;
+		//} else if (map.P.x - (dx + ix) <= 0 && map.P.x - (dx + ix) >= (map.width - screenWidth) * -1 && !map.screenFrozen) {
 		} else if (map.P.x - dx <= 0 && map.P.x - dx >= (map.width - screenWidth) * -1 && !map.screenFrozen) {
 			map.P.x -= dx;
-			document.getElementById("deep-space").style.left = map.P.x + 'px';
-			map.drawEntity();
 		} else {
 			this.R.x += dx;
 		}
 		
-		/* Critical check*/
-		if (this.R.y + this.R.h > floorPx) this.R.y = floorPx - this.R.h; // FIX to the ground
+		/* Interaction fix */
+		if (dx != 0) dx -= ix;
+		dx -= px;
 		
 		/* Set action */
 		if (this.inAir && (this.controls[btn.left] + this.controls[btn.right]) && (map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.climbing;
@@ -257,21 +285,8 @@ class Hero {
 		else if (dx != 0) this.action = act.run;
 		else this.action = act.stop;
 		
-		/* Draw sprite */
+		/* sprite delta */
 		this.n = (dx) ? 1 - this.n : 0;
-		switch (this.action) {
-			case act.stop: 
-				this.draw((this.direction > 0) ? 11 : 5); break; 
-			case act.crawling: 
-				this.draw((this.direction > 0) ? 6 + this.n : 0 + this.n); break; 
-			case act.run:  
-			case act.climbing:
-				this.draw((this.direction > 0) ? 9 + this.n : 3 + this.n); break; 
-			case act.slipping:
-				this.draw((this.direction > 0) ? 9 : 3); break; 
-			case act.jump: 
-				this.draw((this.direction > 0) ? 8 : 2); break; 
-		}
 	}
 	
 	doJump(start, power, duration) {
@@ -291,6 +306,23 @@ class Hero {
 	clearControls() {
 		for (var i = 0; i < this.controls.length; i++)
 			this.controls[i] = 0;
+	}
+	
+	Draw() {
+		document.getElementById("deep-space").style.left = map.P.x + 'px';
+		switch (this.action) {
+			case act.stop: 
+				this.draw((this.direction > 0) ? 11 : 5); break; 
+			case act.crawling: 
+				this.draw((this.direction > 0) ? 6 + this.n : 0 + this.n); break; 
+			case act.run:  
+			case act.climbing:
+				this.draw((this.direction > 0) ? 9 + this.n : 3 + this.n); break; 
+			case act.slipping:
+				this.draw((this.direction > 0) ? 9 : 3); break; 
+			case act.jump: 
+				this.draw((this.direction > 0) ? 8 : 2); break; 
+		}
 	}
 	
 	draw (n) {
@@ -347,6 +379,11 @@ class Map {
 				sym: 'J',
 				trigger: '?landed:en:#\n00 sprite:en:#:2\n00 pass:en:#:4\n10 ?landed:en:# jump:-20:-16:14\n10 sprite:en:#:1\n10 pass:en:#:1\nR 20'
 			},
+			/* Specific trigger for every "F" on the map */
+			{
+				sym: 'F',
+				trigger: '?landed:en:#\n00 sprite:en:#:0\n00 pass:en:#:0\n00 dynamic:create:en:#:32:32:0:6\n05 dynamic:move:$:0:10\n20 dynamic:destroy:$'
+			},
 			/* Just trigger (sym should be = "") */
 			{
 				sym: '',
@@ -359,8 +396,18 @@ class Map {
 			{
 				sym: '',
 				trigger: '150 message:goodluck:350:360:0:Good luck in your little journey.\n250 clear:goodluck'
-			}
-		);		
+			},
+			/* Dynamic example */
+			{
+				sym: '',
+				trigger: '00 dynamic:create:400:410:32:32:0:6'
+			},
+			{
+				sym: '',
+				trigger: '00 dynamic:move:0:-1:0\n50 dynamic:move:0:1:0\nR 100'
+			}				
+		);
+		
 		
 		this.Ph = new Object();
 		this.Ph.gravity = 10; // X px per timer-period in falling
@@ -386,7 +433,7 @@ class Map {
 		
 		/* Entity pictures */
 		this.look = new Array(
-			"dropship.gif",					// D
+			"invisible.gif",					// X
 			"gravityCanonExtended.gif",	// J
 			"gravityCanon.gif",				// j
 			"warpGate.gif",					// W
@@ -397,7 +444,7 @@ class Map {
 			"armory.gif",						// A
 			"stimpack.gif"						// S
 		);
-		this.lookTranslation = 'DJjWBRFGAS'; // look indexes
+		this.lookTranslation = 'XJjWBRFGAS'; // look indexes
 		this.entity = new Array();
 		
 		this.passability = 'H D^WBRGAS'; // passability = 0 (can pass)
@@ -407,7 +454,7 @@ class Map {
 		/* Demo Map structure */
 		this.structure = new Array(
 			"____________________________________________________________",
-			"D                                                           ",
+			"                                                            ",
 			"                                                            ",
 			"                                                            ",
 			"                                                            ",
@@ -415,11 +462,11 @@ class Map {
 			"                  =                                        R",
 			"                  #                                       ==",
 			"                  #                                       ##",
-			" =                #                                    F  ##",
+			"                  #                                    F  ##",
 			"H                 #                                       ##",
 			"==>   <>          #         J                       F     ##",
 			"###> <##>       J #        <=      J          FFFF        ##",
-			"####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##"
+			"####=####^^^^^^^=^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##"
 		);
 	}
 	
@@ -439,7 +486,7 @@ class Map {
 		}
 		document.write('</div>');
 		if (this.debug)
-			document.write('<span id="debug">Click inside frame to activate keyboard</span>');
+			document.write('<span id="debug">Debug info</span>');
 	}
 	
 	debug(s = '') {
@@ -468,8 +515,10 @@ class Map {
 	
 	load(hero, mapText) {
 		this.gameTimer = 0;
+		hero.clearControls();
+		hero.jumpTimer = 0;
 		
-		if (typeof(this.triggers) !== 'undefined')
+		if (typeof(this.trigger) !== 'undefined')
 			this.finalizeTriggers(hero);
 		
 		/* Load from text */
@@ -512,6 +561,7 @@ class Map {
 					if ((value[i] == '' || i == value.length - 1) && comTrim(t) != '') {
 						if (i == value.length - 1) t += '\n' + value[i];
 						this.gears.push({sym: '', trigger: t});
+						t = '';
 					}
 					else
 						t += (t != '') ? '\n' + value[i] : value[i];
@@ -520,17 +570,20 @@ class Map {
 		}
 		
 		this.screenFrozen = false;
-		this.P = new Point(0, 0);		
-		hero.clearControls();
-		hero.jumpTimer = 0;
+		this.P = new Point(0, 0);
 		var m = document.getElementById("deep-space");
 		if (m != null) m.style.left = this.P.x + 'px';
-		this.triggers = new Array();
+		
+		if (typeof(this.dynamic) !== 'undefined')
+			this.drawDynamic(); //destroy dynamic elements if existed
+				
+		this.trigger = new Array();
+		this.dynamic = new Array();
+		this.entity = new Array();
 		
 		// Duplicate string-map with byte-map
 		// * Create passability byte matrix (0/1) is probably faster operating with 
 		this.pass = new Array(this.structure.length);
-		this.entity = new Array();
 		for (var i = 0; i < this.structure.length; i++) {
 			this.pass[i] = new Array(this.structure[i].length);
 			for (var j = 0; j < this.structure[i].length; j++) {
@@ -556,42 +609,69 @@ class Map {
 					let en = new Entity(j, i, x);
 					this.entity.push(en);
 					for (var z = 0; z < this.gears.length; z++)
-						if (this.gears[z].sym == this.structure[i][j])
-							this.triggers.push(new Trigger(this.gears[z].trigger.replace(new RegExp('#', 'g'), this.entity.length - 1)));
+						if (this.gears[z].sym == this.structure[i][j]) {							
+							this.trigger.push(new Trigger(this.gears[z].trigger.replace(new RegExp('#', 'g'), this.entity.length - 1)));
+							//console.log(this.gears[z].trigger.replace(new RegExp('#', 'g'), this.entity.length - 1));
+						}
 				}
 			}
 		}
 		for (var i = 0; i < this.gears.length; i++) 
-			if (this.gears[i].sym == '') this.triggers.push(new Trigger(this.gears[i].trigger));
+			if (this.gears[i].sym == '') this.trigger.push(new Trigger(this.gears[i].trigger));
 	}
 	
-	setEntity(i) {
-		var en = document.getElementById('entity' + i);
+	draw(i, prefix = 'entity') {
+		var en = document.getElementById(prefix + i);
 		if (en == null) {
 			en = document.createElement('img');
-			en.id = 'entity' + i;
-			en.width = this.cellWidth;
-			en.height = this.cellHeight;
-			en.className = 'entity';
+			en.id = prefix + i;
+			en.className = prefix;
 			document.body.appendChild(en);
 		}
-		if (this.entity[i].sprite != this.entity[i].prevSprite) {
-			en.src = 'entity/' + this.planet + '/' + this.look[this.entity[i].sprite];
-			this.entity[i].prevSprite = this.entity[i].sprite;
+		
+		switch (prefix) {
+			case "entity":
+				en.width = this.cellWidth;
+				en.height = this.cellHeight;
+				if (this.entity[i].sprite != this.entity[i].prevSprite) {
+					en.src = 'entity/' + this.planet + '/' + this.look[this.entity[i].sprite];
+					this.entity[i].prevSprite = this.entity[i].sprite;
+				}
+				en.style.left = (this.entity[i].x * this.cellWidth + this.P.x) + 'px'; 
+				en.style.top = (this.entity[i].y * this.cellHeight + this.P.y) + 'px';
+				break;
+			case "dynamic":
+				en.width = this.dynamic[i].R.w;
+				en.height = this.dynamic[i].R.h;
+				if (this.dynamic[i].sprite != this.dynamic[i].prevSprite) {
+					en.src = 'entity/' + this.planet + '/' + this.look[this.dynamic[i].sprite];
+					this.dynamic[i].prevSprite = this.dynamic[i].sprite;
+				}
+				en.style.left = (this.dynamic[i].R.x + this.P.x) + 'px'; 
+				en.style.top = (this.dynamic[i].R.y + this.P.y) + 'px';					
+				break;
 		}
-		en.style.left = (this.entity[i].x * this.cellWidth + this.P.x) + 'px'; 
-		en.style.top = (this.entity[i].y * this.cellHeight + this.P.y) + 'px';
 	}
 	
-	// id >= 0 - draw concrete entity, id == -1 - draw everything
 	drawEntity(id = -1) {
-		if (id >= 0) this.setEntity(id);
-		else for (var i = 0; i < this.entity.length; i++) this.setEntity(i);
+		if (id >= 0) this.draw(id);
+		else for (var i = 0; i < this.entity.length; i++) this.draw(i);
 	}
+	
+	drawDynamic(id = -1) {
+		if (id >= 0) this.draw(id, 'dynamic');
+		else for (var i = 0; i < this.dynamic.length; i++) 
+			if (this.dynamic[i].exist)	this.draw(i, 'dynamic')
+				else if (this.dynamic[i].sprite >= 0) {
+					this.dynamic[i].sprite = -1;
+					var en = document.getElementById('dynamic' + i);
+					if (en != null) en.remove();
+				}
+	}	
 	
 	finalizeTriggers(hero) {
-		for (var i = 0; i < this.triggers.length; i++)
-			this.triggers[i].finalize(hero, this);
+		for (var i = 0; i < this.trigger.length; i++)
+			this.trigger[i].finalize(hero, this);
 	}
 
 }
@@ -620,7 +700,7 @@ var led = Object.freeze({"empty": -1, "landed": 0, "inSquare": 1, "vertical": 2,
 // ENUM subject
 var sub = Object.freeze({"entity": 0, "foe": 1, "cell": 2});
 // ENUM task
-var tsk = Object.freeze({"sprite": 0, "pass": 1, "jump": 2, "teleport": 3, "message": 4, "clear": 5}); 
+var tsk = Object.freeze({"sprite": 0, "pass": 1, "jump": 2, "teleport": 3, "message": 4, "clear": 5, "dynamic": 6}); 
 
 class Led {	
 	constructor(ledString) {
@@ -660,12 +740,12 @@ class Led {
 		if (this.kind == led.empty) return true;
 		switch (this.kind) {
 			case led.landed: 
-				var x = Math.floor((hero.R.x - map.P.x + hero.R.w / 2) / map.cellWidth); // horizontal index for the middle of hero body
-				var y = Math.floor((hero.R.y - map.P.y) / map.cellHeight); //vertical index for the head of hero
+				var x = Math.floor((hero.R.x - map.P.x + hero.R.w / 2) / map.cellWidth);
+				var y = Math.floor((hero.R.y - map.P.y + 10) / map.cellHeight); // +10 is imprecise but working fix.. 
 				switch (this.aspect) {
 					case sub.entity:
 					case sub.foe:
-						if ((x == map.entity[this.id].x && y + 1 == map.entity[this.id].y && !hero.inAir) == this.mode) return true;
+						if ((x == map.entity[this.id].x && (y + 1 == map.entity[this.id].y) && !hero.inAir) == this.mode) return true;
 						break;
 					case sub.cell:
 						if ((x == this.x && y + 1 == this.y && !hero.inAir) == this.mode) return true;
@@ -703,6 +783,7 @@ class Task {
 			case "teleport": this.mission = tsk.teleport; break;
 			case "message": this.mission = tsk.message; break;
 			case "clear": this.mission = tsk.clear; break;
+			case "dynamic": this.mission = tsk.dynamic; break;
 		}
 		this.params = new Array();
 		for (var i = 1; i < parts.length; i++) {
@@ -729,6 +810,7 @@ class Trigger {
 		this.roster = new Array();
 		this.timer = -1;
 		this.butterfly = new Led();
+		this.bag = '';
 		var lines = rosterText.split('\n');		
 		for (var i = 0; i < lines.length; i++)
 			if (lines[i].trim() === '') 
@@ -852,6 +934,45 @@ class Trigger {
 							var el = document.getElementById(this.roster[i].T.params[0]);
 							if (el != null) el.remove();
 							break;
+						/* Dynamic object */
+						case tsk.dynamic:
+							switch (this.roster[i].T.params[0]) {
+								case 'create':
+									if (this.roster[i].T.params[1] == sub.entity) {
+										map.dynamic.push(new Dynamic(
+											map.entity[this.roster[i].T.params[2] * 1.0].x * map.cellWidth,
+											map.entity[this.roster[i].T.params[2] * 1.0].y * map.cellHeight,
+											this.roster[i].T.params[3] * 1.0,
+											this.roster[i].T.params[4] * 1.0,
+											this.roster[i].T.params[5] * 1.0,
+											this.roster[i].T.params[6] * 1.0
+										));
+									} else {
+										map.dynamic.push(new Dynamic(
+											this.roster[i].T.params[1] * 1.0,
+											this.roster[i].T.params[2] * 1.0,
+											this.roster[i].T.params[3] * 1.0,
+											this.roster[i].T.params[4] * 1.0,
+											this.roster[i].T.params[5] * 1.0,
+											this.roster[i].T.params[6] * 1.0
+										));
+									}
+									this.bag = map.dynamic.length - 1;
+									break;
+								case 'move':
+									var id = (this.roster[i].T.params[1] != '$') ? this.roster[i].T.params[1] * 1.0 : this.bag * 1.0;
+									map.dynamic[id].move(this.roster[i].T.params[2] * 1.0, this.roster[i].T.params[3] * 1.0);
+									break;
+								case 'stop':
+									var id = (this.roster[i].T.params[1] != '$') ? this.roster[i].T.params[1] * 1.0 : this.bag * 1.0;
+									map.dynamic[id].stop();
+									break;
+								case 'destroy':
+									var id = (this.roster[i].T.params[1] != '$') ? this.roster[i].T.params[1] * 1.0 : this.bag * 1.0;
+									map.dynamic[id].destroy();
+									break;
+							}
+							break;
 					}
 				}
 			if (this.timer < 10000) this.timer++;
@@ -866,7 +987,71 @@ class Trigger {
 
 
 
-/* >> 03. KEYBOARD >> >> */
+/* >> 03. DYNAMICS >> >> */
+
+class Dynamic {
+
+	constructor(x, y, width, height, border, sprite) {
+		this.R = new Rect(x - border, y - border, width + border * 2, height + border * 2);
+		this.sprite = sprite;
+		this.prevSprite = -1;
+		this.dx = 0;
+		this.dy = 0;
+		this.exist = true;
+	}
+	
+	move(dx = 0, dy = 0) {
+		this.dx = dx;
+		this.dy = dy;
+	}
+	
+	stop() {
+		this.dx = 0;
+		this.dy = 0;
+	}
+	
+	destroy() {
+		this.exist = false;
+	}
+	
+	movement(hero, map) {
+		if (!this.exist) return false;
+		
+		var interaction = new Object({dx: 0, dy: 0, left: 0, right: 0, floor: 0, ceil: 0, cross: false});
+		
+		// Hero
+		var left = hero.R.x - map.P.x;
+		var mid = hero.R.x - map.P.x + hero.R.w / 2;
+		var right = hero.R.x - map.P.x + hero.R.w;
+		var top = hero.R.y - map.P.y;
+		var center = hero.R.y - map.P.y + hero.R.h / 2;
+		var bottom = hero.R.y - map.P.y + hero.R.h;
+		var hR = new Rect(left + 5, top, hero.R.w - 10, hero.R.h + this.dy);
+		
+		this.R.x += this.dx;
+		this.R.y += this.dy;
+		
+		if (this.R.isCrossWith(hR)) {
+			interaction.cross = true;
+			if (mid >= this.R.left && mid < this.R.right && bottom < this.R.top + this.R.height / 2) {
+				interaction.dx = this.dx;
+				interaction.dy = this.dy;
+				interaction.floor = this.R.top;
+			} else if (mid >= this.R.left && mid < this.R.right) {
+				interaction.ceil = this.R.bottom;
+			} else if (center > this.R.top - hero.R.h / 2 && center < this.R.bottom + hero.R.h / 2 && left < this.R.left + this.R.width /2) {
+				interaction.right = this.R.left + 5;
+			} else if (center > this.R.top - hero.R.h / 2 && center < this.R.bottom + hero.R.h / 2) {
+				interaction.left = this.R.right - 5;
+			}
+		}
+		return interaction;
+	}
+}
+
+
+
+/* >> 04. KEYBOARD >> >> */
 
 function KeyDown(e)
 {
@@ -938,7 +1123,7 @@ function KeyUp(e)
 
 
 
-/* >> 04. START >> >> */
+/* >> 05. START >> >> */
 
 var screenWidth = 640;
 
@@ -972,7 +1157,7 @@ var mapTextExample =
 '[map]\n' + 
 'structure:{\n' + 
 '|____________________________________________________________|\n' + 
-'|D                                                           |\n' + 
+'|                                                            |\n' + 
 '|                                                            |\n' + 
 '|                                                            |\n' + 
 '|                                                            |\n' + 
@@ -980,11 +1165,11 @@ var mapTextExample =
 '|          W       =                                        R|\n' + 
 '|X                 #                                       ==|\n' + 
 '|                  #                                       ##|\n' + 
-'| =                #                                    =  ##|\n' + 
+'| =                #                                    F  ##|\n' + 
 '|H                 #                                       ##|\n' + 
-'|==>   <>          #         J                       =     ##|\n' + 
-'|###> <##>       J #        <=      J          ==          ##|\n' + 
-'|####=####^^^=^^==^#^^^===^^##^^^^^^=^^^^^^=^^^##^=^^^^^^^^##|\n' + 
+'|==>   <>          #         J                       F     ##|\n' + 
+'|###> <##>       J #        <=      J          FFFF        ##|\n' + 
+'|####=####^^^^^^^=^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##|\n' + 
 '}\n' + 
 '\n' + 
 '[triggers]\n' + 
@@ -1006,7 +1191,11 @@ var mapTextExample =
 '\n' + 
 'F:{\n' + 
 '?landed:en:#\n' + 
-'05 fall:en:#\n' + 
+'00 sprite:en:#:0\n' + 
+'00 pass:en:#:0\n' + 
+'00 dynamic:create:en:#:32:32:0:6\n' + 
+'05 dynamic:move:$:0:10\n' + 
+'20 dynamic:destroy:$\n' + 
 '}\n' + 
 '\n' + 
 'W:{\n' + 
@@ -1028,10 +1217,17 @@ var mapTextExample =
 '?landed:ce:0:7\n' + 
 '0 message:secret:10:200:0:You found secret block\n' + 
 '50 clear:secret\n' + 
+'\n' + 
+'00 dynamic:create:400:410:32:32:0:6\n' + 
+'\n' + 
+'00 dynamic:move:0:-1:0\n' + 
+'50 dynamic:move:0:1:0\n' + 
+'R 100\n' + 
 '}\n' + 
 '\n'
 ;
 map.load(hero, mapTextExample); //tests
+//map.load(hero);
 
 map.drawStructure();
 map.drawEntity();
@@ -1060,26 +1256,39 @@ function game() {
 	}
 	
 	/* Triggers */
-	for (var i = 0; i < map.triggers.length; i++) 
-		map.triggers[i].launcher(hero, map);
+	for (var i = 0; i < map.trigger.length; i++) 
+		map.trigger[i].launcher(hero, map);
 	
-	/* Check Hero died from Enemy */
-	//...
-	
-	/* Check Hero died from Time */
-	//...
-	
-	/* Entity effects */
-	//...
-	
-	/* Enemy effects */
-	//...
-	
-	/* Enemy movements */
-	//...
+	/* Dynamics */
+	var interaction = new Object({dx: 0, dy: 0, left: 0, right: 0, floor: 0, ceil: 0, cross: false});
+	for (var i = 0; i < map.dynamic.length; i++) {
+		var z = map.dynamic[i].movement(hero, map);
+		if (z.cross) {
+			interaction.cross = true;
+			if (Math.abs(z.dx) > Math.abs(interaction.dx)) interaction.dx = z.dx;
+			if (Math.abs(z.dy) > Math.abs(interaction.dy)) interaction.dy = z.dy;
+			if (z.left) interaction.left = z.left;
+			if (z.right) interaction.right = z.right;
+			if (z.floor) interaction.floor = z.floor;
+			if (z.ceil) interaction.ceil = z.ceil;
+		}
+	}
+	var s = 'Interaction: [';
+	s += (interaction.left) ? ' L' : '';
+	s += (interaction.right) ? ' R' : '';
+	s += (interaction.ceil) ? ' C' : '';
+	s += (interaction.floor) ? ' F' : '';
+	s += ' ]';
+	map.debugIns(s, 4);
 	
 	/* Hero movement */
-	hero.movement(map);
+	hero.movement(map, interaction);
+	/* Check hero squeeze */
+	//if (!hero.movement)	
+	
+	hero.Draw();
+	map.drawEntity();
+	map.drawDynamic();
 
 	map.gameTimer++;
 	gameProcess = setTimeout("game()", interval);
