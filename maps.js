@@ -1,3 +1,6 @@
+var maps = new Object();
+
+maps.debug = `
 Space marine adventures
 Debug Map
 
@@ -5,6 +8,9 @@ Debug Map
 debug = yes
 planet = jupiter
 background = space.jpg
+cellWidth = 32
+cellHeight = 32
+heroView = 250
 
 [pregame]
 lobby:{
@@ -15,6 +21,7 @@ lobby:{
 gravity = 10
 jumpPower = -6
 jumpDuration = 12
+jumpStart = -3
 crawling = 3
 run = 6
 climbing = 3
@@ -24,13 +31,13 @@ slipping = 2
 [map]
 structure:{
 |____________________________________________________________|
-|D                                                           |
 |                                                            |
 |                                                            |
 |                                                            |
 |                                                            |
-|                  =                                        R|
-|   W              #                                       ==|
+|   XXX                                                      |
+|          W       =                                        R|
+|X                 #                                       ==|
 |                  #                                       ##|
 | =                #                                    F  ##|
 |H                 #                                       ##|
@@ -67,12 +74,12 @@ F:{
 
 W:{
 ?inSquare:en:#
-00 teleport:15:2
-R 01
+00 teleport:50:3
+R 10
 }
 
 machinery:{
-50 message:hello:350:330:0:Hello, cosmonaut!
+050 message:hello:350:330:0:Greetings, cosmonaut!
 150 clear:hello
 
 100 message:tooltip:350:345:0:This is test map for SMA.
@@ -82,6 +89,10 @@ machinery:{
 250 clear:goodluck
 
 00 dynamic:create:400:410:32:32:0:6
+
+?landed:ce:0:7
+00 message:secret:10:200:0:You found secret block
+50 clear:secret
 
 00 dynamic:move:0:-1:0
 50 dynamic:move:0:1:0
@@ -93,3 +104,4 @@ R 100
 ## Map file for Space Marine Adventures (c) by onyokneesdog 2018
 ## https://github.com/onyokneesdog/sma
 ## http://defiler.ru/demo/sma
+`;

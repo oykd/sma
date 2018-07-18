@@ -65,7 +65,7 @@ function readSection(text, section) {
 }
 
 /* read value from text / [section] / key = */
-function readValue(text, section, key) {
+function readValue(text, section, key, defaultValue) {
 	var lines = text.split('\n');
 	var inSection = false;
 	var inList = false;
@@ -87,7 +87,17 @@ function readValue(text, section, key) {
 				return comTrim(buildString(rl, '=', 1));
 		}
 	}
-	return false;
+	if (typeof(defaultValue) !== 'undefined') return defaultValue; else return false;
+}
+
+function readBool(text, section, key, defaultValue) {
+	var r = readValue(text, section, key);
+	if (r === false) return defaultValue;
+	return (['YES', 'TRUE', 'OK', 'OKAY', 'ON', '+'].includes(r.toUpperCase())) ? true : false;
+}
+
+function readInt(text, section, key, defaultValue) {
+	return readValue(text, section, key, defaultValue) * 1.0;
 }
 
 /* read array of strings from text / [section] / key:{ .... } */

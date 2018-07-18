@@ -2,11 +2,13 @@
 	Space Marine Adventures v 1.2 Alpha
 		© 2018 onyokneesdog
 	
-	last edit: 17.07.2018
+	last edit: 18.07.2018
 	
 	Using: 
 		readInf.js - reading map info from some text
 		lackey.js - auxiliary classes & functions, which could be used not only for this game
+		maps.js - js-file using for storage maps
+			* (no need in XMLHttpRequest and "--allow-file-access-from-files" for machines without http server)
 	
 	>> >> >>
 	Contents:
@@ -212,14 +214,14 @@ class Hero {
 		}
 		
 		/* Jump start */
-		if (this.R.y + map.Ph.jumpPower - 3 > ceilPx && this.controls[btn.up]) {
+		if (this.R.y + map.Ph.jumpPower + map.Ph.jumpStart > ceilPx && this.controls[btn.up]) {
 			if (legsPx == floorPx) {
-				this.R.y -= 3;
+				this.R.y += map.Ph.jumpStart;
 				this.jumpPower = map.Ph.jumpPower;
 				this.jumpTimer = map.Ph.jumpDuration;
 			}
 			else if ((map.pass[legs][m] == 2 || map.pass[legs][m] == 3) && legsPx >= floorPx - map.Ph.run) {
-				this.R.y -= 3;
+				this.R.y += map.Ph.jumpStart;
 				this.jumpPower = map.Ph.jumpPower;
 				this.jumpTimer = map.Ph.jumpDuration;
 			}
@@ -405,7 +407,7 @@ class Map {
 			{
 				sym: '',
 				trigger: '00 dynamic:move:0:-1:0\n50 dynamic:move:0:1:0\nR 100'
-			}				
+			}
 		);
 		
 		
@@ -413,6 +415,7 @@ class Map {
 		this.Ph.gravity = 10; // X px per timer-period in falling
 		this.Ph.jumpPower = -6; // X px in lift
 		this.Ph.jumpDuration = 12; // Jump period in timer-periods
+		this.Ph.jumpStart = -3; // First phase of jump spurt
 		this.Ph.crawling = 3; // X px in crawling step
 		this.Ph.run = 6; // X px in run step
 		this.Ph.climbing = 3; // X px in climbing
@@ -485,7 +488,7 @@ class Map {
 			document.write('<br>');
 		}
 		document.write('</div>');
-		if (this.debug)
+		if (this.dbg)
 			document.write('<span id="debug">Debug info</span>');
 	}
 	
@@ -526,14 +529,12 @@ class Map {
 			this.gears = new Array();
 			var value;
 			/* options */
-			value = readValue(mapText, 'options', 'debug');
-			if (value !== false) this.debug = (value.toUpperCase() == 'YES') ? true : false;
-			value = readValue(mapText, 'options', 'planet');
-			if (value !== false) this.planet = value;
-			value = readValue(mapText, 'options', 'background');
-			if (value !== false) this.background = value;
-			value = readValue(mapText, 'options', 'heroView');
-			if (value !== false) this.heroView = value * 1.0;
+			this.dbg = readBool(mapText, 'options', 'debug', this.dbg);
+			this.planet = readValue(mapText, 'options', 'planet', this.planet);
+			this.background  = readValue(mapText, 'options', 'background', this.background);
+			this.cellWidth = readInt(mapText, 'options', 'cellWidth', this.cellWidth);
+			this.cellHeight = readInt(mapText, 'options', 'cellHeight', this.cellHeight);
+			this.heroView = readInt(mapText, 'options', 'heroView', this.heroView);			
 			/* Physics */
 			value = readSection(mapText, 'physics');
 			if (value !== false) {
@@ -1128,106 +1129,9 @@ function KeyUp(e)
 var screenWidth = 640;
 
 var hero = new Hero('Jimmy');
-var map = new Map('jupiter', 'space.jpg', true);
+var map = new Map();
 
-//just for tests (actually it's should be read from the file)
-var mapTextExample =
-'Space marine adventures\n' + 
-'Debug Map\n' + 
-'\n' + 
-'[options]\n' + 
-'debug = yes\n' + 
-'planet = jupiter\n' + 
-'background = space.jpg\n' + 
-'\n' + 
-'[pregame]\n' + 
-'lobby:{\n' + 
-'00 start\n' + 
-'}\n' + 
-'\n' + 
-'[physics]\n' + 
-'#gravity = 10\n' + 
-'#jumpPower = -6\n' + 
-'#jumpDuration = 12\n' + 
-'crawling = 3\n' + 
-'run = 6\n' + 
-'climbing = 3\n' + 
-'slipping = 2\n' + 
-'\n' + 
-'[map]\n' + 
-'structure:{\n' + 
-'|____________________________________________________________|\n' + 
-'|                                                            |\n' + 
-'|                                                            |\n' + 
-'|                                                            |\n' + 
-'|                                                            |\n' + 
-'|   XXX                                                      |\n' + 
-'|          W       =                                        R|\n' + 
-'|X                 #                                       ==|\n' + 
-'|                  #                                       ##|\n' + 
-'| =                #                                    F  ##|\n' + 
-'|H                 #                                       ##|\n' + 
-'|==>   <>          #         J                       F     ##|\n' + 
-'|###> <##>       J #        <=      J          FFFF        ##|\n' + 
-'|####=####^^^^^^^=^#^^^===^^##^^^^^^=^^^^^^=^^^^^^^^^^^^^^^##|\n' + 
-'}\n' + 
-'\n' + 
-'[triggers]\n' + 
-'# [timing]\n' + 
-'# [?/! landed/inSquare/vertical/onScreen] {}\n' + 
-'# [sprite/pass/jump/teleport/message/clear : en/fo/ce : params]\n' + 
-'\n' + 
-'gears = JFW\n' + 
-'\n' + 
-'J:{\n' + 
-'?landed:en:#\n' + 
-'00 sprite:en:#:2\n' + 
-'00 pass:en:#:4\n' + 
-'10 ?landed:en:# jump:-20:-16:14\n' + 
-'10 sprite:en:#:1\n' + 
-'10 pass:en:#:1\n' + 
-'R 20\n' + 
-'}\n' + 
-'\n' + 
-'F:{\n' + 
-'?landed:en:#\n' + 
-'00 sprite:en:#:0\n' + 
-'00 pass:en:#:0\n' + 
-'00 dynamic:create:en:#:32:32:0:6\n' + 
-'05 dynamic:move:$:0:10\n' + 
-'20 dynamic:destroy:$\n' + 
-'}\n' + 
-'\n' + 
-'W:{\n' + 
-'?inSquare:en:#\n' + 
-'00 teleport:50:3\n' + 
-'R 10\n' + 
-'}\n' + 
-'\n' + 
-'machinery:{\n' + 
-'50 message:hello:350:330:0:Hello, cosmonaut!\n' + 
-'150 clear:hello\n' + 
-'\n' + 
-'100 message:tooltip:350:345:0:This is test map for SMA.\n' + 
-'200 clear:tooltip\n' + 
-'\n' + 
-'150 message:goodluck:350:360:0:Good luck in your little journey.\n' + 
-'250 clear:goodluck\n' + 
-'\n' +
-'?landed:ce:0:7\n' + 
-'0 message:secret:10:200:0:You found secret block\n' + 
-'50 clear:secret\n' + 
-'\n' + 
-'00 dynamic:create:400:410:32:32:0:6\n' + 
-'\n' + 
-'00 dynamic:move:0:-1:0\n' + 
-'50 dynamic:move:0:1:0\n' + 
-'R 100\n' + 
-'}\n' + 
-'\n'
-;
-map.load(hero, mapTextExample); //tests
-//map.load(hero);
+map.load(hero, maps.debug); //tests
 
 map.drawStructure();
 map.drawEntity();
@@ -1242,16 +1146,16 @@ game();
 // Game Process
 function game() {
 	clearTimeout(gameProcess);
-	
+
 	/* Check Finish */
-	if (hero.R.isCrossWith(map.finish, map.P.x)) {
-		map.debugIns('Level complete!', 3);
+	if (hero.R.isCrossWith(map.finish, map.P.x, map.P.y)) {
+		map.debugIns('Level complete!', 5);
 		map.load(hero);
 	}
 	
 	/* Check fell into chasm */
 	if (hero.R.bottom >= map.height - map.cellHeight / 2) {
-		map.debugIns('Fell into chasm :(', 3);
+		map.debugIns('Fell into chasm :(', 5);
 		map.load(hero);
 	}
 	

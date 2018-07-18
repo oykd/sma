@@ -26,7 +26,7 @@ class Rect {
 	get bottom() {	return this.y + this.h	}
 	
 	isCrossWith(r, dx = 0, dy = 0) {
-		if (this.left <= r.right + dx && this.right >= r.left + dx && this.top <= r.bottom && this.bottom >= r.top ) return true;
+		if (this.left <= r.right + dx && this.right >= r.left + dx && this.top <= r.bottom + dy && this.bottom >= r.top + dy) return true;
 		return false;			
 	}	
 }
