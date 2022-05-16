@@ -118,7 +118,6 @@ R 440
 
 
 
-## Map file for Space Marine Adventures (c) by onyokneesdog 2018
-## https://github.com/onyokneesdog/sma
-## http://defiler.ru/demo/sma
+## Map file for Space Marine Adventures (c) by oykd 2018
+## https://github.com/oykd/sma
 `;

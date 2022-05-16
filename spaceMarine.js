@@ -1,6 +1,6 @@
 /*
 	Space Marine Adventures v 1.2 Alpha
-		© 2018 onyokneesdog
+		© 2018 oykd
 	
 	last edit: 18.07.2018
 	
@@ -50,7 +50,7 @@
 	However, precise 2D physics is not the most correct task for browser game, based on javascript. 
 	Dont be surprise by some caveman ways of realization..
 	
-	https://github.com/onyokneesdog/sma
+	https://github.com/oykd/sma
 */
 
 
