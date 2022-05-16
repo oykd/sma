@@ -88,15 +88,32 @@ machinery:{
 150 message:goodluck:350:360:0:Good luck in your little journey.
 250 clear:goodluck
 
-00 dynamic:create:400:410:32:32:0:6
-
 ?landed:ce:0:7
 00 message:secret:10:200:0:You found secret block
 50 clear:secret
 
+00 dynamic:create:400:410:32:32:0:6
+
 00 dynamic:move:0:-1:0
 50 dynamic:move:0:1:0
 R 100
+
+00 dynamic:create:220:320:32:32:0:6
+00 dynamic:create:252:320:32:32:0:6
+00 dynamic:create:130:220:32:32:0:6
+00 dynamic:create:162:220:32:32:0:6
+
+00 dynamic:move:1:-1:0
+200 dynamic:move:1:1:0
+00 dynamic:move:2:-1:0
+200 dynamic:move:2:1:0
+R 400
+
+00 dynamic:move:3:0:1
+220 dynamic:move:3:0:-1
+00 dynamic:move:4:0:1
+220 dynamic:move:4:0:-1
+R 440
 }
 
 

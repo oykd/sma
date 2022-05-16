@@ -23,7 +23,17 @@
 	Notes:
 		xx. Test vertical type maps 
 			legsPx in hero.movement should be calculated with map.P.y (later)
-		00. Add start impulse to the Physics..
+			
+		00. interaction issues
+		00. check left and right interaction (some problems with climbing and moving blocks in the same time)
+		01. chage sprites for map cells
+		02. add slit
+		03. add hero death by squeese
+		04. add stairs
+		05. add ropes
+		06. async backgrounds
+		07. frontal objects
+		08. dash
 		
 	>> >> >>
 	Explanations:
@@ -68,6 +78,8 @@ class Hero {
 		this.prevSprite = -1;
 		this.inertia = 0;
 		this.inAir = false;
+		this.lay = false;
+		this.incline = false;
 		this.n = 0;
 		
 		/* Hero pictures */
@@ -89,17 +101,18 @@ class Hero {
 	
 	movement(map, interaction) {
 		/* Map coords fix */
+		// It's could happen after using teleport.
 		if (map.P.x > 0) map.P.x = 0;
 		if (map.P.x < (map.width - screenWidth) * -1) map.P.x = (map.width - screenWidth) * -1;
 		
-		/* Save direction */
+		/* Basic hero defaults */
 		if (this.controls[btn.left]) this.direction = -1;
 		if (this.controls[btn.right]) this.direction = 1;
-		
-		/* Lead-up */
-		var dx = map.Ph.run; // possible horizontal move
-		dx = dx * (this.controls[btn.right] - this.controls[btn.left]);
+		this.lay = false;
+		this.incline = false;
 		this.inAir = false;
+		
+		/* Lead-up; calculation of hero geometry */
 		var m = Math.floor((this.R.x - map.P.x + this.R.w / 2) / map.cellWidth); // horizontal index for middle of hero body
 		var mx = (this.R.x - map.P.x + this.R.w / 2) - m * map.cellWidth; // distinction beetween left index and middle px
 		var left = Math.floor((this.R.x - map.P.x + 3) / map.cellWidth); // horizontal index for left side of hero
@@ -113,7 +126,7 @@ class Hero {
 		
 		/* Get floor */
 		var floorName = 'air'; 
-		var floor = map.pass.length; // floor vertical index
+		var floor = map.pass.length;
 		for (var	i = legs; i < map.pass.length; i++)
 			if (map.pass[i][m] == 1) {	
 				floor = i; 
@@ -135,68 +148,63 @@ class Hero {
 		var floorPx = floor * map.cellHeight; // floor in pixels (Y)
 		
 		/* Get ceil */
-		var ceil = -1; // ceil vertical index
+		var ceil = -1;
 		for (var	i = head; i >= 0; i--)
 			if (map.pass[i][m] == 1) { 
 				ceil = i; 
 				break; 
 			}
-		var ceilPx = (ceil + 1) * map.cellHeight; // ceil in pixels (Y)	
+		var ceilPx = (ceil + 1) * map.cellHeight; // ceil in pixels (Y)
+		
+		/* On the incline surface? */
+		if (!interaction.border.floor && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)) this.incline = true;	
 		
 		/* INTERACTION */
-		var ix = 0;
-		var iy = 0;
-		var px = 0;
-		if (interaction.cross) {
-			if (interaction.left && interaction.right) return false;
-			if (interaction.floor && interaction.ceil) return false;			
-			if (interaction.floor) {
+		var harshPush = 0; // categorical horizontal bias
+		if (interaction.effect) {
+			if (interaction.border.floor && interaction.border.floor < floorPx) {
 				floorName = 'dynamic';
-				legsPx = interaction.floor;
-				floorPx = interaction.floor;
-				this.R.y = interaction.floor - this.R.h;
+				legsPx = interaction.border.floor;
+				floorPx = interaction.border.floor;
+				this.R.y = interaction.border.floor - this.R.h;
 				this.jumpTimer = 0;
 				this.jumpPower = 0;
-				ix = interaction.dx;
-				iy = interaction.dy;
 			}
-			if (interaction.ceil) {
-				ceilPx = (legsPx == floorPx) ? interaction.ceil : interaction.ceil + 5;				
+			if (interaction.border.ceil) {
+				ceilPx = interaction.border.ceil;
 				this.jumpTimer = 0;
 			}
-			if (interaction.left) {
-				px = interaction.left + map.P.x - this.R.x;
-				if (floorName == 'uphill' && interaction.dy > 0) this.R.y += Math.abs(ix) * -1;
+			if (interaction.border.left) {
+				harshPush = interaction.border.left + map.P.x - this.R.x;
 			}
-			if (interaction.right) {
-				px = interaction.right - this.R.w + map.P.x - this.R.x;
-				if (floorName == 'downhill' && interaction.dy > 0) this.R.y += Math.abs(ix) * -1;
-			}			
+			if (interaction.border.right) {
+				harshPush = interaction.border.right + map.P.x - this.R.x - this.R.w;
+			}
+			
+			if (interaction.push.ceil) {
+				if (floorName == 'uphill' && legsPx == floorPx) {
+					//harshPush = 30;
+					//map.debugIns('dsfadsf', 4);
+				}
+				//if (floorName == 'downhill') harshPush = 10;
+			}
+			
+			/* Hero smashed? */
+			//....
 		}
 		
 		/* debug */
 		map.debugIns('Hero: ' + this.R.x + ':' + this.R.y + ' | Map: ' + map.P.x + ':' + map.P.y, 0);
 		map.debugIns('Floor: ' + floorName + ' / ' + floorPx + ' | Ceil: ' + ceilPx, 1);
-		
-		/* Slipping */
-		if ((map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3) && !(this.controls[btn.left] + this.controls[btn.right])) {
-			if (map.pass[slFix][m] == 2) dx = map.Ph.slipping;
-			if (map.pass[slFix][m] == 3) dx = -1 * map.Ph.slipping;
-			// specially for this situation: ><
-			let z = map.pass[slFix][Math.floor((this.R.x - map.P.x + this.R.w / 2 + dx) / map.cellWidth)];
-			if ((z == 2 || z == 3) && z != map.pass[slFix][m]) dx = 0; 
-			// inertia fixing some bugs between the blocks
-			this.inertia = dx;
-		}
-		
+
 		/* on the ground */
 		if (legsPx == floorPx) {
 			map.debugIns(' >> ground >>', 2); //debug
 			this.jumpTimer = 0;
 		/* in Air */
 		} else if (legsPx < floorPx) {
-			this.inAir = true;
 			map.debugIns(' >> air >>', 2); //debug
+			this.inAir = true;			
 			// JUMP
 			if (this.jumpTimer > 0)	{
 				this.jumpTimer--;
@@ -212,6 +220,8 @@ class Hero {
 				if (this.R.y + this.R.h > floorPx) this.R.y = floorPx - this.R.h; // FIX to the ground
 			}
 		}
+		if (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)	
+			map.debugIns(' >> ground >>', 2); //debug
 		
 		/* Jump start */
 		if (this.R.y + map.Ph.jumpPower + map.Ph.jumpStart > ceilPx && this.controls[btn.up]) {
@@ -219,76 +229,93 @@ class Hero {
 				this.R.y += map.Ph.jumpStart;
 				this.jumpPower = map.Ph.jumpPower;
 				this.jumpTimer = map.Ph.jumpDuration;
-			}
-			else if ((map.pass[legs][m] == 2 || map.pass[legs][m] == 3) && legsPx >= floorPx - map.Ph.run) {
+			} else if ((map.pass[legs][m] == 2 || map.pass[legs][m] == 3) && legsPx >= floorPx - map.Ph.run) {
 				this.R.y += map.Ph.jumpStart;
 				this.jumpPower = map.Ph.jumpPower;
 				this.jumpTimer = map.Ph.jumpDuration;
 			}
 		}
 		
+		/* Run */ 
+		// dx - final horizontal bias
+		var dx = map.Ph.run; 
+		dx = dx * (this.controls[btn.right] - this.controls[btn.left]);
+		
+		/* Slipping */
+		if (!interaction.border.floor && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3) && !(this.controls[btn.left] + this.controls[btn.right])) {
+			if (map.pass[slFix][m] == 2 && harshPush >= 0) dx = map.Ph.slipping;
+			if (map.pass[slFix][m] == 3 && harshPush <= 0) dx = -1 * map.Ph.slipping;
+			// specially for this situation: ><
+			let z = map.pass[slFix][Math.floor((this.R.x - map.P.x + this.R.w / 2 + dx) / map.cellWidth)];
+			if ((z == 2 || z == 3) && z != map.pass[slFix][m]) dx = 0; 
+			// inertia fixing some bugs between the blocks
+			this.inertia = dx;
+		}
+		
 		/* Inertia */
-		// * using only for slipping in this version
+		// Even after slipping is over, we save motion moment for one more itteration
 		if (dx == 0) {
 			dx = this.inertia;
 			this.inertia = 0;
 		}
 		
-		/* Interaction fix */
-		dx += ix;
-		
 		/* Crawling */
-		if (!this.inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3))
+		if (!this.inAir && this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) {
 			dx = map.Ph.crawling * (this.controls[btn.right] - this.controls[btn.left]);
+			if (dx * harshPush < 0) dx = 0; // push & dx should be same sign
+			this.lay = true;
+		}
+			
+		/* Interaction haul */
+		if (interaction.haul * harshPush >= 0) dx += interaction.haul; // push & haul should be same sign
 		
 		/* Check horizontal barriers*/
 		if ((map.pass[head][left] || map.pass[legs][left] == 1 || left < 0) && dx < 0) dx = 0;
 		if ((map.pass[head][right] || map.pass[legs][right] == 1 || right > map.pass[0].length - 1) && dx > 0) dx = 0;	
 		
-		/* harsh push */
-		if (!interaction.ceil) dx += px;
-		
 		/* Climbing */
 		// * it's must be after checking h-barriers
-		if (this.R.y - map.Ph.climbing > ceilPx) {
-			if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left] && map.pass[head][left] != 1 && !interaction.left) {
+		if (this.R.y - map.Ph.climbing > ceilPx && !interaction.border.floor) {
+			if ((map.pass[legs][left] == 2 || map.pass[legs][m] == 2) && this.controls[btn.left] && map.pass[head][left] != 1 && !interaction.border.left) {
 				dx = -1 * map.Ph.climbing;
 				this.R.y -= map.Ph.climbing;
 			}
-			if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right] && map.pass[head][right] != 1 && !interaction.right) {
+			if ((map.pass[legs][right] == 3 || map.pass[legs][m] == 3) && this.controls[btn.right] && map.pass[head][right] != 1 && !interaction.border.right) {
 				dx = map.Ph.climbing;
 				this.R.y -= map.Ph.climbing;
 			}
 		}
 		
+		/* Harsh push by moving borders of dynamic objects */
+		dx += harshPush;
+		
 		// Critical check
-		if (this.R.y + this.R.h > floorPx && !interaction.ceil) this.R.y = floorPx - this.R.h; // FIX to the ground
+		if (this.R.y + this.R.h > floorPx) {
+			if (!interaction.border.ceil) this.R.y = floorPx - this.R.h; // FIX to the ground
+			dx = 0;
+		}
 		
 		/* Final accept DX to Hero or Map position */
-		//if (dx + ix > 0 && this.R.x + dx + ix < map.heroView || dx + ix < 0 && this.R.x + dx + ix > map.heroView) {
 		if (dx > 0 && this.R.x + dx < map.heroView || dx < 0 && this.R.x + dx > map.heroView) {
 			this.R.x += dx;
-		//} else if (map.P.x - (dx + ix) <= 0 && map.P.x - (dx + ix) >= (map.width - screenWidth) * -1 && !map.screenFrozen) {
 		} else if (map.P.x - dx <= 0 && map.P.x - dx >= (map.width - screenWidth) * -1 && !map.screenFrozen) {
 			map.P.x -= dx;
 		} else {
 			this.R.x += dx;
 		}
 		
-		/* Interaction fix */
-		if (dx != 0) dx -= ix;
-		dx -= px;
-		
 		/* Set action */
 		if (this.inAir && (this.controls[btn.left] + this.controls[btn.right]) && (map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.climbing;
 		else if (this.inAir && (map.pass[slFix][m] == 2 || map.pass[slFix][m] == 3)) this.action = act.slipping;		
 		else if (this.R.y + this.R.h < floorPx - 10) this.action = act.jump;
 		else if (this.controls[btn.down] && !(map.pass[legs][m] == 2 || map.pass[legs][m] == 3)) this.action = act.crawling;
-		else if (dx != 0) this.action = act.run;
+		else if ((this.controls[btn.left] + this.controls[btn.right]) && dx) this.action = act.run;
 		else this.action = act.stop;
 		
 		/* sprite delta */
-		this.n = (dx) ? 1 - this.n : 0;
+		this.n = ((this.controls[btn.left] + this.controls[btn.right]) && dx) ? 1 - this.n : 0;
+		
+		return true;
 	}
 	
 	doJump(start, power, duration) {
@@ -852,13 +879,11 @@ class Trigger {
 	
 	launcher(hero, map) {
 		if (this.timer == -1 && this.butterfly.check(hero, map)) {
-			map.debugIns('Trigger launched', 3);
 			this.timer = 0;
 		}
 		if (this.timer >= 0) {
 			for (var i = 0; i < this.roster.length; i++)
 				if (this.roster[i].timer == this.timer && this.roster[i].led.check(hero, map)) {
-					map.debugIns('Trigger roster: ' + i, 3);
 					switch (this.roster[i].T.mission) {
 						/* Change sprite */
 						case tsk.sprite: 
@@ -978,7 +1003,6 @@ class Trigger {
 				}
 			if (this.timer < 10000) this.timer++;
 			if (this.timer == this.restore) {
-				map.debugIns('Trigger finished', 3);
 				this.timer = -1;
 			}
 		}
@@ -1017,33 +1041,49 @@ class Dynamic {
 	
 	movement(hero, map) {
 		if (!this.exist) return false;
-		
-		var interaction = new Object({dx: 0, dy: 0, left: 0, right: 0, floor: 0, ceil: 0, cross: false});
-		
-		// Hero
+		/* Interaction of concrete object and hero */
+		var interaction = new Object({
+			effect: false,
+			haul: 0, //can be only horizontal, when hero landed on moving object
+			push: {left: 0, right: 0, floor: 0, ceil: 0}, // physical push to hero
+			border: {left: 0, right: 0, floor: 0, ceil: 0} // hero geometry shoud not cross this borders
+			});
+		/* Hero geometry */
 		var left = hero.R.x - map.P.x;
 		var mid = hero.R.x - map.P.x + hero.R.w / 2;
 		var right = hero.R.x - map.P.x + hero.R.w;
-		var top = hero.R.y - map.P.y;
-		var center = hero.R.y - map.P.y + hero.R.h / 2;
+		var top = hero.R.y - map.P.y; 
 		var bottom = hero.R.y - map.P.y + hero.R.h;
 		var hR = new Rect(left + 5, top, hero.R.w - 10, hero.R.h + this.dy);
-		
+		/* Moving dynamic object */
 		this.R.x += this.dx;
 		this.R.y += this.dy;
-		
+		/* Set interaction, if object crossing with hero geometry */
 		if (this.R.isCrossWith(hR)) {
-			interaction.cross = true;
+			interaction.effect = true;
+			
+			
+			
+			
+			// else if -> if ? to fix incline problem
+			
+			
+			
+			
+			
 			if (mid >= this.R.left && mid < this.R.right && bottom < this.R.top + this.R.height / 2) {
-				interaction.dx = this.dx;
-				interaction.dy = this.dy;
-				interaction.floor = this.R.top;
+				interaction.haul = this.dx;
+				interaction.push.floor = (this.dy < 0) ? this.dy : 0;
+				interaction.border.floor = this.R.top;
 			} else if (mid >= this.R.left && mid < this.R.right) {
-				interaction.ceil = this.R.bottom;
-			} else if (center > this.R.top - hero.R.h / 2 && center < this.R.bottom + hero.R.h / 2 && left < this.R.left + this.R.width /2) {
-				interaction.right = this.R.left + 5;
-			} else if (center > this.R.top - hero.R.h / 2 && center < this.R.bottom + hero.R.h / 2) {
-				interaction.left = this.R.right - 5;
+				interaction.push.ceil = (this.dy > 0) ? this.dy : 0;
+				interaction.border.ceil = this.R.bottom;
+			} else if (top < this.R.bottom - 2 && bottom > this.R.top + 2 && mid < this.R.left + this.R.width / 2) {
+				interaction.push.right = (this.dx < 0) ? this.dx : 0;
+				interaction.border.right = this.R.left + 5;
+			} else if (top < this.R.bottom - 2 && bottom > this.R.top + 2) {
+				interaction.push.left = (this.dx > 0) ? this.dx : 0;
+				interaction.border.left = this.R.right - 5;
 			}
 		}
 		return interaction;
@@ -1164,31 +1204,42 @@ function game() {
 		map.trigger[i].launcher(hero, map);
 	
 	/* Dynamics */
-	var interaction = new Object({dx: 0, dy: 0, left: 0, right: 0, floor: 0, ceil: 0, cross: false});
+	var interaction = new Object({
+		effect: false,
+		haul: 0, 
+		push: {left: 0, right: 0, floor: 0, ceil: 0}, 
+		border: {left: 0, right: 0, floor: 0, ceil: 0} 
+		});
+	// Sum up interaction of all dynamic objects into result interaction
 	for (var i = 0; i < map.dynamic.length; i++) {
 		var z = map.dynamic[i].movement(hero, map);
-		if (z.cross) {
-			interaction.cross = true;
-			if (Math.abs(z.dx) > Math.abs(interaction.dx)) interaction.dx = z.dx;
-			if (Math.abs(z.dy) > Math.abs(interaction.dy)) interaction.dy = z.dy;
-			if (z.left) interaction.left = z.left;
-			if (z.right) interaction.right = z.right;
-			if (z.floor) interaction.floor = z.floor;
-			if (z.ceil) interaction.ceil = z.ceil;
+		if (z.effect) {
+			interaction.effect = true;
+			if (z.border.floor != 0 && (z.border.floor < interaction.border.floor || interaction.border.floor == 0)) {
+				interaction.border.floor = z.border.floor;
+				interaction.push.floor = z.push.floor;
+				interaction.haul = z.haul;
+			}
+			if (z.border.ceil != 0 && z.border.ceil > interaction.border.ceil || interaction.border.ceil == 0) { 
+				interaction.border.ceil = z.border.ceil;
+				interaction.push.ceil = z.push.ceil;
+			}
+			if (z.border.left != 0 && z.border.left > interaction.border.left || interaction.border.left == 0) { 
+				interaction.border.left = z.border.left;
+				interaction.push.left = z.push.left;
+			}
+			if (z.border.right != 0 && z.border.right < interaction.border.right || interaction.border.right == 0) { 
+				interaction.border.right = z.border.right;
+				interaction.push.right = z.push.right;
+			}
 		}
 	}
-	var s = 'Interaction: [';
-	s += (interaction.left) ? ' L' : '';
-	s += (interaction.right) ? ' R' : '';
-	s += (interaction.ceil) ? ' C' : '';
-	s += (interaction.floor) ? ' F' : '';
-	s += ' ]';
-	map.debugIns(s, 4);
 	
 	/* Hero movement */
-	hero.movement(map, interaction);
-	/* Check hero squeeze */
-	//if (!hero.movement)	
+	if (!hero.movement(map, interaction)) {
+		map.debugIns('Flatten & compressed :(', 5);
+		map.load(hero);
+	}
 	
 	hero.Draw();
 	map.drawEntity();
